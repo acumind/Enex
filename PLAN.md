@@ -76,7 +76,7 @@ Start with a **manual + assisted** approach before going fully agentic:
 | **ORM** | SQLAlchemy 2.0 + Alembic (migrations) | Mature Python ORM, excellent PostgreSQL support |
 | **Cache** | Redis (Upstash) | For leaderboard caching, rate limiting, job queues |
 | **Job Scheduler** | Celery + Redis (or ARQ for lightweight async) | Daily outcome evaluation, price fetching, notifications |
-| **Auth** | NextAuth.js (frontend) + JWT verification (backend) | Google OAuth, user accounts for community submissions |
+| **Auth** | NextAuth.js (frontend) + JWT verification (backend) | Google OAuth + Email OTP + Mobile OTP (MSG91). Three login paths for maximum accessibility |
 | **Deployment** | Azure Container Apps (both frontend + backend) | Serverless containers, auto-scaling, single cloud provider |
 
 > **Architecture note:** Frontend and backend are separate services communicating via REST API. This enables independent deployment, leverages Python's strengths for financial data processing, and keeps the API consumable by future mobile apps or third-party integrations.
@@ -258,3 +258,4 @@ Month 7+:    Phase 5 — Monetization, public API, premium features
 | 5 | Identity verification for predictors? | **Deferred** | `is_verified` field exists in schema. Verification process (claim profile, proof of identity) to be designed in Phase 3. |
 | 6 | Historical seeding: How far back? | **Resolved** | ~100 well-known predictions from the past 1-2 years. Focus on top 20-30 most-followed predictors. |
 | 7 | Unified predictor model? | **Resolved** | Single `predictors` table covers individuals, firms, media houses, influencers. Individuals link to parent firm via `parent_id`. Scorecards and leaderboard apply to all types equally. |
+| 8 | Authentication methods? | **Resolved** | Three login paths: Google OAuth + Email OTP + Mobile OTP (via MSG91). All in MVP. Indian retail investors expect mobile OTP. |

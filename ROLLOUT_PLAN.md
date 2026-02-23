@@ -17,7 +17,7 @@
 | Frontend | Next.js 15 (App Router) + React | SSR/SSG for SEO, file-system routing, containerized deployment |
 | Backend | FastAPI (Python 3.12+) | Best AI/data analysis ecosystem, yfinance, pandas, Anthropic SDK |
 | Architecture | Separate frontend + backend | Flexibility for independent scaling, cleaner API contract |
-| Authentication | User accounts from day 1 | Community submissions, watchlists, alerts from launch |
+| Authentication | Google OAuth + Email OTP + Mobile OTP | Three login paths from day 1. MSG91 for mobile OTP (India-optimized, DLT-compliant) |
 | Historical seeding | ~100 well-known predictions | Avoid cold-start; demonstrate value immediately |
 | Deployment | Azure Container Apps | Serverless containers, auto-scaling, single cloud provider |
 | Hosting budget | $50–100/month | Managed services, comfortable headroom |
@@ -161,17 +161,36 @@ CREATE TABLE stock_daily_prices (
 -- Users (defined before predictions due to foreign key dependency)
 CREATE TABLE users (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    email           VARCHAR(320) NOT NULL UNIQUE,
+    email           VARCHAR(320) UNIQUE,           -- nullable: user may register with phone only
+    phone           VARCHAR(15) UNIQUE,            -- E.164 format: +919876543210 (nullable: may register with email only)
     name            VARCHAR(200),
     avatar_url      VARCHAR(500),
-    password_hash   VARCHAR(200),                  -- for email/password auth (nullable for OAuth-only users)
     role            VARCHAR(20) DEFAULT 'user',    -- 'user', 'moderator', 'admin'
-    oauth_provider  VARCHAR(20),                   -- 'google', 'github'
+    auth_methods    JSONB DEFAULT '[]',            -- ['google', 'email_otp', 'phone_otp'] — tracks which methods user has used
+    oauth_provider  VARCHAR(20),                   -- 'google' (for OAuth users)
     oauth_id        VARCHAR(200),
+    is_email_verified BOOLEAN DEFAULT FALSE,
+    is_phone_verified BOOLEAN DEFAULT FALSE,
     is_active       BOOLEAN DEFAULT TRUE,
     created_at      TIMESTAMPTZ DEFAULT NOW(),
-    last_login_at   TIMESTAMPTZ
+    last_login_at   TIMESTAMPTZ,
+
+    CONSTRAINT user_has_identity CHECK (email IS NOT NULL OR phone IS NOT NULL)
 );
+
+-- OTP verification codes (shared for email + phone OTP)
+CREATE TABLE otp_codes (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    identifier      VARCHAR(320) NOT NULL,         -- email address or phone number (E.164)
+    code            VARCHAR(6) NOT NULL,           -- 6-digit OTP
+    purpose         VARCHAR(20) NOT NULL,          -- 'login', 'register', 'verify_email', 'verify_phone'
+    attempts        INT DEFAULT 0,                 -- track failed attempts (max 3)
+    expires_at      TIMESTAMPTZ NOT NULL,          -- OTP valid for 5 minutes
+    used_at         TIMESTAMPTZ,                   -- null until consumed
+    created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX idx_otp_lookup ON otp_codes(identifier, purpose, created_at DESC)
+    WHERE used_at IS NULL;
 
 -- Predictions (the heart of the system)
 CREATE TABLE predictions (
@@ -335,7 +354,7 @@ For each approved prediction where eval_date <= today AND no final outcome exist
 | Validation | **Pydantic v2** (built into FastAPI) | Free |
 | Task Queue | **Celery** + Redis (or **ARQ** for lightweight async) | Free |
 | AI | **Anthropic Python SDK** (Claude Sonnet for extraction) | ~$5-15/mo at MVP scale |
-| Auth | **python-jose** (JWT verification) — frontend handles OAuth via NextAuth.js | Free |
+| Auth | **python-jose** (JWT), **NextAuth.js** (Google OAuth), **MSG91** (mobile OTP), **Resend** (email OTP) | ~₹2-5/mo at MVP scale |
 | Price Data | **yfinance** (primary) + **nsetools** (fallback) | Free |
 | Hosting | **Azure Container Apps** (both frontend + backend) | ~$15-30/mo (consumption plan) |
 | Database | **Azure Database for PostgreSQL** (Flexible Server, Burstable B1ms) | ~$15-25/mo |
@@ -350,7 +369,7 @@ For each approved prediction where eval_date <= today AND no final outcome exist
 | UI Library | **Shadcn/ui** + **Tailwind CSS** | Free |
 | Charts | **Recharts** or **Tremor** | Free |
 | State | **TanStack Query** (server state) + **Zustand** (client state) | Free |
-| Auth | **NextAuth.js v5** (Google OAuth) | Free |
+| Auth | **NextAuth.js v5** (Google OAuth) + custom OTP login pages | Free |
 | API Client | Auto-generated from OpenAPI spec (**openapi-typescript-fetch**) | Free |
 | Hosting | **Azure Container Apps** (shared with backend infra) | Included above |
 
@@ -481,10 +500,11 @@ GET  /api/v1/stats                               # Platform-wide stats
 
 ### Authenticated Endpoints (user)
 ```
-POST /api/v1/auth/register                  # Email/password registration
-POST /api/v1/auth/login                     # Email/password login
-POST /api/v1/auth/verify-token              # Verify NextAuth JWT
+POST /api/v1/auth/otp/send                  # Send OTP to email or phone
+POST /api/v1/auth/otp/verify                # Verify OTP → returns JWT
+POST /api/v1/auth/google/callback           # Exchange Google OAuth code → JWT
 GET  /api/v1/auth/me                        # Current user profile
+PATCH /api/v1/auth/me                       # Update profile (add email/phone)
 POST /api/v1/predictions                    # Submit a new prediction
 POST /api/v1/extract                        # AI-extract from URL (returns pre-filled data)
 GET  /api/v1/me/watchlist                   # User's watchlist
@@ -535,7 +555,7 @@ POST /api/v1/admin/trigger-evaluation       # Manually trigger outcome evaluatio
 /submit                        → Submit a prediction (auth required)
 /submit?url=...                → AI-assisted submission with pre-filled URL
 /search?q=...                  → Search results (predictors + stocks)
-/login                         → OAuth login page
+/login                         → Login page: tabbed (Phone OTP / Email OTP / Google OAuth)
 /dashboard                     → User dashboard: watchlist, followed predictors, alerts
 /admin                         → Admin panel: review queue, manage predictors
 /about                         → About page, methodology explanation
@@ -597,7 +617,12 @@ POST /api/v1/admin/trigger-evaluation       # Manually trigger outcome evaluatio
 - [ ] SEO: meta tags, structured data (Schema.org), SSG for key pages
 
 ### Sprint 5: User Features & Auth (Days 35-41)
-- [ ] Google OAuth integration
+- [ ] Email OTP login: send OTP via Resend → verify → issue JWT
+- [ ] Mobile OTP login: send OTP via MSG91 Verify API → verify → issue JWT
+- [ ] Google OAuth integration via NextAuth.js v5
+- [ ] Account linking (add email/phone to existing account, Google OAuth merges by email)
+- [ ] OTP rate limiting and brute-force protection (Redis-backed)
+- [ ] Login/register UI: tabbed interface (Phone / Email / Google)
 - [ ] User dashboard (watchlist, followed predictors)
 - [ ] Follow/unfollow predictors (any type)
 - [ ] Stock watchlist
@@ -761,7 +786,9 @@ enex/
 │   │   ├── core/
 │   │   │   ├── config.py               # Pydantic Settings (env vars)
 │   │   │   ├── database.py
-│   │   │   ├── security.py             # JWT verification, password hashing
+│   │   │   ├── security.py             # JWT creation/verification
+│   │   │   ├── otp.py                  # OTP generation, rate limiting, verification logic
+│   │   │   ├── msg91.py                # MSG91 Verify API client (mobile OTP)
 │   │   │   └── redis.py
 │   │   └── main.py                     # FastAPI app, CORS, router registration
 │   ├── alembic/                         # Database migrations
@@ -793,7 +820,7 @@ enex/
 │   │   ├── admin/
 │   │   │   └── page.tsx                 # Admin panel (admin role required)
 │   │   ├── login/
-│   │   │   └── page.tsx                 # OAuth login
+│   │   │   └── page.tsx                 # Login: Phone OTP / Email OTP / Google OAuth
 │   │   ├── about/
 │   │   │   └── page.tsx                 # Methodology + about
 │   │   └── api/auth/
@@ -890,22 +917,66 @@ On push to main:
 
 ## Authentication Strategy
 
+### Three Login Paths
+
+```
+┌──────────────────────────────────────────────────────────┐
+│                    LOGIN / REGISTER                        │
+│                                                            │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐│
+│  │ Google OAuth  │  │  Email OTP   │  │   Mobile OTP     ││
+│  │              │  │              │  │                  ││
+│  │ [Continue    │  │ Enter email  │  │ Enter phone      ││
+│  │  with Google]│  │ → Get 6-digit│  │ → Get 6-digit    ││
+│  │              │  │   OTP via    │  │   OTP via SMS    ││
+│  │ NextAuth.js  │  │   Resend     │  │   (MSG91)        ││
+│  │ handles flow │  │ → Verify     │  │ → Verify         ││
+│  └──────┬───────┘  └──────┬───────┘  └──────┬───────────┘│
+│         │                 │                  │             │
+│         └─────────────────┼──────────────────┘             │
+│                           ▼                                │
+│                   Backend issues JWT                       │
+│                   User record created/updated              │
+└──────────────────────────────────────────────────────────┘
+```
+
 ### Architecture
-- **Frontend (Next.js)**: NextAuth.js v5 handles OAuth flow (Google provider), session management, and CSRF protection
-- **Backend (FastAPI)**: Receives JWT tokens from the frontend and verifies them. Does NOT manage OAuth flow directly
-- **Flow**: User logs in via NextAuth.js → NextAuth creates a session + JWT → frontend sends JWT in `Authorization: Bearer <token>` header → FastAPI middleware verifies the JWT signature and extracts user info
+- **Google OAuth**: NextAuth.js v5 handles the OAuth flow → on success, backend creates/upserts user and issues JWT
+- **Email OTP**: User enters email → backend generates 6-digit OTP → sent via Resend API → user enters OTP → backend verifies and issues JWT
+- **Mobile OTP**: User enters phone (+91...) → backend sends OTP via MSG91 Verify API → user enters OTP → backend verifies with MSG91 and issues JWT
+- **JWT**: All three paths result in the same JWT token. Frontend stores it and sends in `Authorization: Bearer <token>` header
 
 ### Auth Endpoints
-- `POST /api/v1/auth/register` — email/password registration (hashed with bcrypt via `passlib`)
-- `POST /api/v1/auth/login` — email/password login, returns JWT
-- `POST /api/v1/auth/verify-token` — validate a NextAuth JWT token
+- `POST /api/v1/auth/otp/send` — send OTP to email or phone (`{ identifier: "email@..." | "+91...", purpose: "login" }`)
+- `POST /api/v1/auth/otp/verify` — verify OTP and get JWT (`{ identifier: "...", code: "123456" }`)
+- `POST /api/v1/auth/google/callback` — exchange Google OAuth code for JWT (called by NextAuth)
 - `GET /api/v1/auth/me` — get current user profile from JWT
+- `PATCH /api/v1/auth/me` — update profile (add email/phone to existing account)
+
+### OTP Configuration
+- OTP length: 6 digits
+- OTP expiry: 5 minutes
+- Max attempts per OTP: 3 (then must request new OTP)
+- Rate limit: max 5 OTP requests per identifier per hour
+- Cooldown: 60 seconds between OTP requests to same identifier
 
 ### JWT Configuration
-- Access token expiry: 1 hour
-- Refresh token expiry: 7 days
+- Access token expiry: 24 hours (longer for mobile-friendly UX)
+- Refresh token expiry: 30 days
 - Algorithm: HS256 with a shared secret between Next.js and FastAPI
 - Token payload: `{ sub: user_id, role: "user"|"moderator"|"admin", exp: ... }`
+
+### MSG91 Integration (Mobile OTP)
+- **Service**: MSG91 Verify API (OTP as a service — handles generation, delivery, and verification)
+- **DLT compliance**: MSG91 handles DLT registration, sender ID, and template approval (required for India SMS)
+- **Cost**: ~₹0.15-0.20 per OTP SMS
+- **Fallback**: If MSG91 is down, show "Try email OTP or Google login" (no silent fallback to another SMS provider in MVP)
+
+### Account Linking
+- Users can add multiple auth methods to the same account
+- If a user registers with phone, they can later add email (and vice versa)
+- Google OAuth links by email — if a user with that email already exists, the accounts merge
+- `auth_methods` JSONB field tracks which methods the user has used: `["google", "email_otp", "phone_otp"]`
 
 ---
 
@@ -958,6 +1029,11 @@ ANTHROPIC_API_KEY=sk-ant-...
 JWT_SECRET=<shared-secret>
 CORS_ORIGINS=http://localhost:3000,https://enex-frontend.<region>.azurecontainerapps.io
 SENTRY_DSN=...
+
+# Auth providers
+MSG91_AUTH_KEY=...                       # MSG91 auth key for OTP SMS
+MSG91_TEMPLATE_ID=...                    # MSG91 OTP template (DLT approved)
+RESEND_API_KEY=re_...                    # Resend API key for email OTP
 
 # Frontend (.env.local) — in production, set as Container Apps env vars
 NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
