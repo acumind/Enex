@@ -66,7 +66,18 @@ Start with a **manual + assisted** approach before going fully agentic:
 - **Search**: Find predictors or stocks quickly
 - **Filters**: By sector, timeframe, predictor type (individual/firm/media), prediction type
 
-### 1.5 Tech Stack
+### 1.5 User Roles & Permissions
+
+| Role | Who | Capabilities |
+|------|-----|-------------|
+| **Visitor** | Unauthenticated | Browse leaderboard, predictor profiles, stock pages, search. Read-only access to all public data. |
+| **User** | Registered (OTP/OAuth) | Everything a visitor can + submit predictions (go to review queue), follow predictors, watchlist stocks, receive notifications, manage own profile. |
+| **Moderator** | Promoted by admin | Everything a user can + access review queue, approve/reject predictions, edit predictor profiles, flag/edit incorrect data. |
+| **Admin** | System owner | Full access: everything above + manage user roles (promote/demote moderators and admins), ban/suspend users, create/edit/delete predictors and stocks, trigger evaluation jobs, access system stats, seed data. |
+
+> **Key rule:** All user-submitted predictions go through the moderator review queue in MVP, regardless of submitter history. No auto-approve for any user role.
+
+### 1.6 Tech Stack
 
 | Layer | Choice | Rationale |
 |-------|--------|-----------|
@@ -259,3 +270,4 @@ Month 7+:    Phase 5 — Monetization, public API, premium features
 | 6 | Historical seeding: How far back? | **Resolved** | ~100 well-known predictions from the past 1-2 years. Focus on top 20-30 most-followed predictors. |
 | 7 | Unified predictor model? | **Resolved** | Single `predictors` table covers individuals, firms, media houses, influencers. Individuals link to parent firm via `parent_id`. Scorecards and leaderboard apply to all types equally. |
 | 8 | Authentication methods? | **Resolved** | Three login paths: Google OAuth + Email OTP + Mobile OTP (via MSG91). All in MVP. Indian retail investors expect mobile OTP. |
+| 9 | User roles and management? | **Resolved** | Four roles: visitor (unauth), user, moderator, admin. All submissions reviewed by moderators. Admin manages roles from UI. Ban/suspend capability in MVP. First admin seeded via CLI. |

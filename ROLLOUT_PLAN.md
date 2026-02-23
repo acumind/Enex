@@ -172,6 +172,7 @@ CREATE TABLE users (
     is_email_verified BOOLEAN DEFAULT FALSE,
     is_phone_verified BOOLEAN DEFAULT FALSE,
     is_active       BOOLEAN DEFAULT TRUE,
+    ban_reason      VARCHAR(500),                   -- admin-provided reason if banned (nullable)
     created_at      TIMESTAMPTZ DEFAULT NOW(),
     last_login_at   TIMESTAMPTZ,
 
@@ -587,6 +588,9 @@ POST /api/v1/admin/trigger-evaluation       # Manually trigger outcome evaluatio
 
 ### Sprint 1: Core Data Layer (Days 4-10)
 - [ ] CRUD APIs: predictors (all types), stocks, predictions
+- [ ] Role-based access control: `require_role()` dependency for admin/moderator endpoints
+- [ ] Admin user management APIs: list users, change roles, ban/suspend
+- [ ] CLI command to create first admin account (`create-admin`)
 - [ ] Stock price fetcher job (yfinance + nsetools)
 - [ ] Seed initial stock data: NSE top 200 companies (symbol, name, sector)
 - [ ] Admin panel: basic CRUD for predictors (create individual, firm, media house, etc.)
@@ -789,7 +793,9 @@ enex/
 │   │   │   ├── security.py             # JWT creation/verification
 │   │   │   ├── otp.py                  # OTP generation, rate limiting, verification logic
 │   │   │   ├── msg91.py                # MSG91 Verify API client (mobile OTP)
+│   │   │   ├── permissions.py          # Role-based access: require_role(), get_current_user()
 │   │   │   └── redis.py
+│   │   ├── cli.py                       # CLI commands (create-admin, seed-data)
 │   │   └── main.py                     # FastAPI app, CORS, router registration
 │   ├── alembic/                         # Database migrations
 │   ├── tests/
@@ -977,6 +983,122 @@ On push to main:
 - If a user registers with phone, they can later add email (and vice versa)
 - Google OAuth links by email — if a user with that email already exists, the accounts merge
 - `auth_methods` JSONB field tracks which methods the user has used: `["google", "email_otp", "phone_otp"]`
+
+---
+
+## User Management
+
+### User Roles & Permission Matrix
+
+```
+                          Visitor   User   Moderator   Admin
+                          ───────   ────   ─────────   ─────
+PUBLIC DATA
+  Browse leaderboard         ✓       ✓        ✓         ✓
+  View predictor profiles    ✓       ✓        ✓         ✓
+  View stock pages           ✓       ✓        ✓         ✓
+  Search predictors/stocks   ✓       ✓        ✓         ✓
+  View prediction details    ✓       ✓        ✓         ✓
+
+PREDICTIONS
+  Submit prediction          ✗       ✓        ✓         ✓
+  AI-extract from URL        ✗       ✓        ✓         ✓
+  Edit own submissions       ✗       ✓*       ✓         ✓
+    (* only while status = pending_review)
+
+ENGAGEMENT
+  Follow predictors          ✗       ✓        ✓         ✓
+  Watchlist stocks           ✗       ✓        ✓         ✓
+  Receive notifications      ✗       ✓        ✓         ✓
+  Manage notification prefs  ✗       ✓        ✓         ✓
+
+PROFILE
+  Edit own profile           ✗       ✓        ✓         ✓
+  Add email/phone to acct    ✗       ✓        ✓         ✓
+
+MODERATION
+  Access review queue        ✗       ✗        ✓         ✓
+  Approve predictions        ✗       ✗        ✓         ✓
+  Reject predictions         ✗       ✗        ✓         ✓
+  Edit predictor profiles    ✗       ✗        ✓         ✓
+  Edit stock metadata        ✗       ✗        ✓         ✓
+
+ADMINISTRATION
+  Create predictors/stocks   ✗       ✗        ✗         ✓
+  Delete predictors/stocks   ✗       ✗        ✗         ✓
+  Manage user roles          ✗       ✗        ✗         ✓
+  Ban/suspend users          ✗       ✗        ✗         ✓
+  Trigger evaluation jobs    ✗       ✗        ✗         ✓
+  View system stats/health   ✗       ✗        ✗         ✓
+  Seed data (bulk import)    ✗       ✗        ✗         ✓
+```
+
+### Role Hierarchy
+- `visitor` → unauthenticated (not stored in DB)
+- `user` → default role on registration
+- `moderator` → promoted by admin via admin panel
+- `admin` → promoted by existing admin (first admin seeded via DB/CLI)
+
+### Admin Panel Features
+
+| Feature | Description |
+|---------|-------------|
+| **User management** | List all users (paginated, searchable), view profile, change role (user ↔ moderator ↔ admin), ban/suspend/reactivate |
+| **Review queue** | List pending predictions, approve/reject with optional reason, bulk approve/reject |
+| **Predictor management** | Create/edit/delete predictor profiles (any type), link individuals to parent firms, upload avatars |
+| **Stock management** | Add/edit stocks, mark as delisted/suspended, trigger price refresh |
+| **Evaluation controls** | Manually trigger outcome evaluation, scorecard recomputation |
+| **System dashboard** | Total users, predictions, predictors, pending reviews, job health, recent errors |
+| **Seed data tools** | Bulk import predictors (CSV), bulk import stocks, bulk import historical predictions |
+
+### Admin API Endpoints (Extended)
+
+```
+# User management (admin only)
+GET    /api/v1/admin/users                    # List users (paginated, search by name/email/phone)
+GET    /api/v1/admin/users/:id                # View user details
+PATCH  /api/v1/admin/users/:id/role           # Change role: { role: "moderator" | "admin" | "user" }
+PATCH  /api/v1/admin/users/:id/status         # Ban/suspend: { is_active: false, reason: "..." }
+
+# Existing admin endpoints (expanded)
+GET    /api/v1/admin/review-queue             # Predictions pending review (paginated)
+POST   /api/v1/admin/predictions/:id/approve  # Approve prediction
+POST   /api/v1/admin/predictions/:id/reject   # Reject with reason: { reason: "..." }
+POST   /api/v1/admin/predictors               # Create predictor (any type)
+PUT    /api/v1/admin/predictors/:id           # Update predictor
+DELETE /api/v1/admin/predictors/:id           # Delete predictor (soft delete)
+POST   /api/v1/admin/stocks                   # Add stock
+PUT    /api/v1/admin/stocks/:id               # Update stock
+POST   /api/v1/admin/trigger-evaluation       # Manually trigger outcome evaluation
+POST   /api/v1/admin/trigger-scorecard        # Manually trigger scorecard recomputation
+GET    /api/v1/admin/stats                    # System-wide stats dashboard
+
+# Bulk operations (admin only)
+POST   /api/v1/admin/seed/predictors          # Bulk import predictors from CSV/JSON
+POST   /api/v1/admin/seed/stocks              # Bulk import stocks
+POST   /api/v1/admin/seed/predictions         # Bulk import historical predictions
+```
+
+### User Ban/Suspend Behavior
+- When `is_active` is set to `false`:
+  - User cannot log in (OTP send/verify and Google callback return 403)
+  - Existing JWT tokens are rejected by middleware (check `is_active` on every authenticated request)
+  - User's submitted predictions remain in the system (not deleted)
+  - User's follows/watchlist preserved (restored if reactivated)
+- Admin can reactivate by setting `is_active` back to `true`
+- Ban reason stored in `users.ban_reason` field (for admin reference)
+
+### Permission Enforcement
+- **Backend**: FastAPI dependency injection — `get_current_user()` extracts user from JWT, `require_role("moderator")` and `require_role("admin")` dependencies check the role field
+- **Frontend**: Route-level middleware in Next.js — redirect unauthenticated users from `/submit`, `/dashboard`, `/admin` pages. Hide admin nav links for non-admins. API calls return 401/403 which triggers redirect to login
+
+### First Admin Setup
+- The first admin account is created via a CLI command or seed script during initial deployment:
+  ```
+  python -m app.cli create-admin --email admin@enex.in --phone +91XXXXXXXXXX
+  ```
+- This creates a user with `role='admin'` directly in the database
+- All subsequent admins are promoted from the admin panel
 
 ---
 
