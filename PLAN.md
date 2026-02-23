@@ -65,18 +65,20 @@ Start with a **manual + assisted** approach before going fully agentic:
 - **Search**: Find analysts or stocks quickly
 - **Filters**: By sector, timeframe, firm, prediction type
 
-### 1.5 Tech Stack (Recommended)
+### 1.5 Tech Stack
 
 | Layer | Choice | Rationale |
 |-------|--------|-----------|
-| **Frontend** | Next.js (React) | SSR for SEO (people will search for analyst names), good DX |
-| **Backend API** | Next.js API routes + tRPC or REST | Keep it simple in one repo initially |
+| **Frontend** | Next.js (React) | SSR/SSG for SEO (analyst names, stock pages), App Router, good DX |
+| **Backend API** | FastAPI (Python) — separate service | Python's data analysis ecosystem (pandas, yfinance, nsetools), best AI/ML integration (Anthropic SDK), async performance |
 | **Database** | PostgreSQL | Relational data with complex queries (joins, aggregations, time-series) |
-| **ORM** | Prisma or Drizzle | Type-safe DB access |
-| **Cache** | Redis | For leaderboard caching, rate limiting |
-| **Job Scheduler** | BullMQ (Redis-backed) or pg-cron | Daily outcome evaluation, price fetching |
-| **Auth** | NextAuth.js / Clerk | User accounts for community submissions |
-| **Deployment** | Vercel (frontend) + Railway/Fly.io (backend/DB) or a single VPS | Cost-effective for MVP |
+| **ORM** | SQLAlchemy 2.0 + Alembic (migrations) | Mature Python ORM, excellent PostgreSQL support |
+| **Cache** | Redis (Upstash) | For leaderboard caching, rate limiting, job queues |
+| **Job Scheduler** | Celery + Redis (or ARQ for lightweight async) | Daily outcome evaluation, price fetching, notifications |
+| **Auth** | NextAuth.js (frontend) + JWT verification (backend) | Google OAuth, user accounts for community submissions |
+| **Deployment** | Vercel (Next.js frontend) + Railway/Fly.io (FastAPI backend) | Cost-effective, auto-deploy from main branch |
+
+> **Architecture note:** Frontend and backend are separate services communicating via REST API. This enables independent deployment, leverages Python's strengths for financial data processing, and keeps the API consumable by future mobile apps or third-party integrations.
 
 ---
 
@@ -201,19 +203,24 @@ Over time, the historical prediction database becomes extremely valuable — no 
 
 ## Rollout Sequence
 
+> See ROLLOUT_PLAN.md for detailed sprint breakdown.
+
 ```
-Week 1-2:   Project scaffolding, DB schema, basic CRUD API
-Week 3-4:   Manual prediction entry UI, stock price integration
-Week 5-6:   Outcome evaluation engine, basic leaderboard
-Week 7-8:   Analyst profile pages, search, filtering
-            --- MVP Launch (invite-only beta) ---
-Week 9-10:  AI extraction agent (Claude) for news articles
-Week 11-12: Review queue, community submission system
-            --- Public Beta ---
-Week 13+:   User accounts, alerts, advanced analytics
-            Social media monitoring, TV transcript parsing
-            Mobile-responsive improvements
-            API for third-party access
+Days 1-3:    Sprint 0 — Project scaffolding, DB schema, CI/CD, dev environment
+Days 4-10:   Sprint 1 — Core CRUD APIs, stock price fetcher, seed data
+Days 11-17:  Sprint 2 — Prediction entry UI, AI extraction, source archival
+Days 18-24:  Sprint 3 — Outcome evaluation engine, scorecard computation
+Days 25-34:  Sprint 4 — Public interface: leaderboard, profiles, search, SEO
+Days 35-41:  Sprint 5 — User auth, watchlists, follow, notifications
+Days 42-48:  Sprint 6 — Historical seeding, landing page, polish
+             --- MVP Launch (invite-only beta) — ~Week 7 ---
+Days 49-55:  Sprint 7 — Beta feedback, bug fixes, rate limiting
+Days 56-62:  Sprint 8 — Load testing, security audit, legal pages
+             --- Public Beta Launch — ~Week 9 ---
+Month 3-4:   Phase 2 — Agentic ingestion (RSS, social media, auto-extraction)
+Month 4-5:   Phase 3 — Community features, analyst verification, badges
+Month 5-7:   Phase 4 — Advanced analytics, comparison tools
+Month 7+:    Phase 5 — Monetization, public API, premium features
 ```
 
 ---
@@ -238,11 +245,13 @@ Week 13+:   User accounts, alerts, advanced analytics
 
 ---
 
-## Open Questions to Decide Before Coding
+## Open Questions — Resolution Status
 
-1. **Target market**: India-first, or US equities, or both simultaneously?
-2. **Prediction scope**: Only equity price targets, or also include sector calls, index predictions, macro calls?
-3. **Scoring methodology**: Simple hit/miss, or weighted by magnitude of prediction (a 100% upside call that hits should score higher than a 5% call)?
-4. **Community moderation model**: Fully admin-controlled, or Wikipedia-style community moderation?
-5. **Identity verification for analysts**: How do we confirm an analyst profile maps to the real person?
-6. **Historical seeding**: How far back should we go to seed past predictions? 1 year? 5 years?
+| # | Question | Status | Decision |
+|---|----------|--------|----------|
+| 1 | Target market: India-first, or US equities, or both? | **Resolved** | India-first (NSE/BSE). Large retail base, active analyst ecosystem. |
+| 2 | Prediction scope: Only equity price targets? | **Resolved** | Price targets only. Most specific and falsifiable. |
+| 3 | Scoring: Simple hit/miss or weighted by magnitude? | **Resolved** | Simple hit/miss with 5% tolerance band for partial hits. Magnitude weighting deferred to Phase 4. |
+| 4 | Community moderation model? | **Deferred** | Start with admin-controlled review queue. Wikipedia-style community moderation to be designed in Phase 3. |
+| 5 | Identity verification for analysts? | **Deferred** | `is_verified` field exists in schema. Verification process (claim profile, proof of identity) to be designed in Phase 3. |
+| 6 | Historical seeding: How far back? | **Resolved** | ~100 well-known predictions from the past 1-2 years. Focus on top 20-30 most-followed analysts/firms. |

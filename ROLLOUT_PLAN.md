@@ -13,6 +13,8 @@
 | Prediction types | Price targets only | Most specific, falsifiable. Clean hit/miss. No subjectivity. |
 | Scoring model | Simple hit/miss with tolerance band | Easy to understand, explain, and trust. 5% tolerance = partial hit. |
 | AI in MVP | AI-assisted manual entry | User pastes article URL → Claude pre-fills form → user confirms |
+| Frontend | Next.js 15 (App Router) + React | SSR/SSG for SEO, file-system routing, Vercel deployment |
+| Backend | FastAPI (Python 3.12+) | Best AI/data analysis ecosystem, yfinance, pandas, Anthropic SDK |
 | Architecture | Separate frontend + backend | Flexibility for independent scaling, cleaner API contract |
 | Authentication | User accounts from day 1 | Community submissions, watchlists, alerts from launch |
 | Historical seeding | ~100 well-known predictions | Avoid cold-start; demonstrate value immediately |
@@ -30,16 +32,17 @@
            │                      │                       │
            ▼                      ▼                       ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│                     FRONTEND (React + Vite)                         │
+│                     FRONTEND (Next.js + React)                      │
 │                                                                     │
-│  Public Pages          Authenticated Pages       Admin Panel        │
-│  ─────────────         ──────────────────        ───────────        │
-│  • Leaderboard         • Submit prediction       • Review queue     │
+│  Public Pages (SSR/SSG) Authenticated Pages       Admin Panel       │
+│  ──────────────────     ──────────────────        ───────────       │
+│  • Leaderboard (SSG)   • Submit prediction       • Review queue     │
 │  • Analyst profiles    • Watchlist/alerts         • Manage analysts  │
-│  • Stock pages         • Follow analysts         • Approve/reject   │
-│  • Search/filters      • Notification prefs      • Seed data        │
+│    (SSG + ISR)         • Follow analysts         • Approve/reject   │
+│  • Stock pages (SSG)   • Notification prefs      • Seed data        │
+│  • Search/filters                                                   │
 │                                                                     │
-│  Deployed: Vercel / Cloudflare Pages                                │
+│  Deployed: Vercel                                                   │
 └──────────────────────────────┬──────────────────────────────────────┘
                                │ REST API (HTTPS)
                                ▼
@@ -86,12 +89,13 @@
 3. **FastAPI performance** — async, type-safe, auto-generated OpenAPI docs
 4. **Rapid development** — Pydantic models, dependency injection, middleware
 
-### Why React + Vite for Frontend
+### Why Next.js (React) for Frontend
 
-1. **Fast build times** — Vite is significantly faster than CRA/Webpack
-2. **SEO via SSG** — pre-render analyst profile pages and leaderboard for search engines (can add SSR later if needed, or use a meta-framework like TanStack Start)
+1. **SSR/SSG for SEO** — analyst profiles, stock pages, and leaderboard need search engine visibility (people will search for analyst names). Next.js App Router with ISR (Incremental Static Regeneration) delivers both performance and SEO
+2. **Built-in routing** — file-system routing, layouts, loading states, error boundaries
 3. **Rich component ecosystem** — Shadcn/ui, Recharts for analytics dashboards
 4. **TypeScript** — type-safe API consumption with generated types from OpenAPI spec
+5. **Vercel integration** — zero-config deployment, preview environments per PR
 
 ---
 
@@ -129,7 +133,8 @@ CREATE TABLE analysts (
 
 -- Stocks
 CREATE TABLE stocks (
-    symbol          VARCHAR(30) PRIMARY KEY,       -- e.g., 'RELIANCE', 'INFY'
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    symbol          VARCHAR(30) NOT NULL UNIQUE,   -- e.g., 'RELIANCE', 'INFY' (unique but not PK — symbols can change)
     exchange        VARCHAR(10) NOT NULL,           -- 'NSE', 'BSE'
     bse_code        VARCHAR(10),                   -- BSE scrip code
     name            VARCHAR(200) NOT NULL,
@@ -138,14 +143,45 @@ CREATE TABLE stocks (
     market_cap      BIGINT,                        -- cached, updated daily
     current_price   DECIMAL(12,2),                 -- cached, updated daily
     price_updated_at TIMESTAMPTZ,
+    is_active       BOOLEAN DEFAULT TRUE,          -- false for delisted/suspended stocks
     created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Stock daily prices (historical data for outcome evaluation)
+CREATE TABLE stock_daily_prices (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    stock_id        UUID NOT NULL REFERENCES stocks(id),
+    trade_date      DATE NOT NULL,
+    open_price      DECIMAL(12,2),
+    high_price      DECIMAL(12,2),
+    low_price       DECIMAL(12,2),
+    close_price     DECIMAL(12,2) NOT NULL,
+    volume          BIGINT,
+    adjusted_close  DECIMAL(12,2),                 -- adjusted for splits/bonuses
+    created_at      TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (stock_id, trade_date)
+);
+
+-- Users (defined before predictions due to foreign key dependency)
+CREATE TABLE users (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email           VARCHAR(320) NOT NULL UNIQUE,
+    name            VARCHAR(200),
+    avatar_url      VARCHAR(500),
+    password_hash   VARCHAR(200),                  -- for email/password auth (nullable for OAuth-only users)
+    role            VARCHAR(20) DEFAULT 'user',    -- 'user', 'moderator', 'admin'
+    oauth_provider  VARCHAR(20),                   -- 'google', 'github'
+    oauth_id        VARCHAR(200),
+    is_active       BOOLEAN DEFAULT TRUE,
+    created_at      TIMESTAMPTZ DEFAULT NOW(),
+    last_login_at   TIMESTAMPTZ
 );
 
 -- Predictions (the heart of the system)
 CREATE TABLE predictions (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     analyst_id      UUID NOT NULL REFERENCES analysts(id),
-    stock_symbol    VARCHAR(30) NOT NULL REFERENCES stocks(symbol),
+    stock_id        UUID NOT NULL REFERENCES stocks(id),
 
     -- The prediction itself
     target_price    DECIMAL(12,2) NOT NULL,
@@ -154,7 +190,7 @@ CREATE TABLE predictions (
                         (((target_price - price_at_prediction) / price_at_prediction) * 100) STORED,
     prediction_date DATE NOT NULL,                 -- when the analyst made the call
     target_date     DATE,                          -- when they expect it to hit (nullable)
-    default_eval_date DATE NOT NULL,               -- fallback: prediction_date + default timeframe
+    default_eval_date DATE NOT NULL,               -- fallback: prediction_date + 12 months (default timeframe)
 
     -- Source & provenance
     source_url      VARCHAR(1000) NOT NULL,
@@ -183,9 +219,9 @@ CREATE TABLE prediction_outcomes (
     prediction_id   UUID NOT NULL UNIQUE REFERENCES predictions(id),
 
     outcome_status  VARCHAR(20) NOT NULL,          -- 'hit', 'miss', 'partial_hit', 'pending', 'expired'
-    actual_price    DECIMAL(12,2),                 -- price at evaluation date
-    highest_price   DECIMAL(12,2),                 -- highest price reached during tracking window
-    lowest_price    DECIMAL(12,2),                 -- lowest price reached during tracking window
+    actual_price    DECIMAL(12,2),                 -- closing price at evaluation date
+    highest_price   DECIMAL(12,2),                 -- highest closing price during tracking window
+    lowest_price    DECIMAL(12,2),                 -- lowest closing price during tracking window
     deviation_pct   DECIMAL(8,2),                  -- how far off the target was
 
     evaluated_at    TIMESTAMPTZ,                   -- when outcome was determined
@@ -214,43 +250,47 @@ CREATE TABLE analyst_scorecards (
     last_updated        TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Users
-CREATE TABLE users (
+-- Notifications
+CREATE TABLE notifications (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    email           VARCHAR(320) NOT NULL UNIQUE,
-    name            VARCHAR(200),
-    avatar_url      VARCHAR(500),
-    role            VARCHAR(20) DEFAULT 'user',    -- 'user', 'moderator', 'admin'
-    oauth_provider  VARCHAR(20),                   -- 'google', 'github'
-    oauth_id        VARCHAR(200),
-    created_at      TIMESTAMPTZ DEFAULT NOW(),
-    last_login_at   TIMESTAMPTZ
+    user_id         UUID NOT NULL REFERENCES users(id),
+    type            VARCHAR(50) NOT NULL,          -- 'prediction_outcome', 'new_prediction', 'analyst_update'
+    title           VARCHAR(300) NOT NULL,
+    message         TEXT,
+    data            JSONB DEFAULT '{}',            -- structured payload (prediction_id, analyst_id, etc.)
+    is_read         BOOLEAN DEFAULT FALSE,
+    created_at      TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- User engagement features
 CREATE TABLE user_watchlist (
-    user_id         UUID REFERENCES users(id),
-    stock_symbol    VARCHAR(30) REFERENCES stocks(symbol),
+    user_id         UUID REFERENCES users(id) ON DELETE CASCADE,
+    stock_id        UUID REFERENCES stocks(id) ON DELETE CASCADE,
     created_at      TIMESTAMPTZ DEFAULT NOW(),
-    PRIMARY KEY (user_id, stock_symbol)
+    PRIMARY KEY (user_id, stock_id)
 );
 
 CREATE TABLE user_followed_analysts (
-    user_id         UUID REFERENCES users(id),
-    analyst_id      UUID REFERENCES analysts(id),
+    user_id         UUID REFERENCES users(id) ON DELETE CASCADE,
+    analyst_id      UUID REFERENCES analysts(id) ON DELETE CASCADE,
     created_at      TIMESTAMPTZ DEFAULT NOW(),
     PRIMARY KEY (user_id, analyst_id)
 );
 
 -- Indexes for common queries
+CREATE INDEX idx_stock_daily_prices_lookup ON stock_daily_prices(stock_id, trade_date DESC);
 CREATE INDEX idx_predictions_analyst ON predictions(analyst_id, prediction_date DESC);
-CREATE INDEX idx_predictions_stock ON predictions(stock_symbol, prediction_date DESC);
+CREATE INDEX idx_predictions_stock ON predictions(stock_id, prediction_date DESC);
 CREATE INDEX idx_predictions_status ON predictions(status);
-CREATE INDEX idx_predictions_pending ON predictions(id) WHERE status = 'approved'
-    AND id NOT IN (SELECT prediction_id FROM prediction_outcomes WHERE outcome_status != 'pending');
+CREATE INDEX idx_predictions_date ON predictions(prediction_date DESC);
+CREATE INDEX idx_predictions_approved_pending ON predictions(default_eval_date)
+    WHERE status = 'approved';
+CREATE INDEX idx_outcomes_prediction ON prediction_outcomes(prediction_id);
 CREATE INDEX idx_outcomes_status ON prediction_outcomes(outcome_status);
 CREATE INDEX idx_scorecards_accuracy ON analyst_scorecards(accuracy_pct DESC)
     WHERE total_predictions >= 10;
+CREATE INDEX idx_notifications_user ON notifications(user_id, created_at DESC)
+    WHERE is_read = FALSE;
 ```
 
 ### Evaluation Logic (Pseudocode)
@@ -297,7 +337,7 @@ For each approved prediction where eval_date <= today AND no final outcome exist
 | Validation | **Pydantic v2** (built into FastAPI) | Free |
 | Task Queue | **Celery** + Redis (or **ARQ** for lightweight async) | Free |
 | AI | **Anthropic Python SDK** (Claude Sonnet for extraction) | ~$5-15/mo at MVP scale |
-| Auth | **authlib** + JWT tokens (Google OAuth + email/password) | Free |
+| Auth | **python-jose** (JWT verification) — frontend handles OAuth via NextAuth.js | Free |
 | Price Data | **yfinance** (primary) + **nsetools** (fallback) | Free |
 | Hosting | **Railway** or **Fly.io** | ~$15-25/mo |
 | Database | **Neon PostgreSQL** (Pro) or **Railway PostgreSQL** | ~$10-20/mo |
@@ -307,11 +347,12 @@ For each approved prediction where eval_date <= today AND no final outcome exist
 
 | Component | Technology | Cost |
 |-----------|-----------|------|
-| Framework | **React 18** + **Vite** | Free |
-| Routing | **React Router v7** or **TanStack Router** | Free |
+| Framework | **Next.js 15** (App Router) + **React 19** | Free |
+| Routing | **Next.js file-system routing** (App Router) | Free |
 | UI Library | **Shadcn/ui** + **Tailwind CSS** | Free |
 | Charts | **Recharts** or **Tremor** | Free |
 | State | **TanStack Query** (server state) + **Zustand** (client state) | Free |
+| Auth | **NextAuth.js v5** (Google OAuth) | Free |
 | API Client | Auto-generated from OpenAPI spec (**openapi-typescript-fetch**) | Free |
 | Hosting | **Vercel** (free tier sufficient for MVP) | $0 |
 
@@ -339,7 +380,7 @@ For each approved prediction where eval_date <= today AND no final outcome exist
 2. Cache prices in the `stocks` table
 3. Use nsetools for on-demand real-time lookups when needed
 4. If yfinance fails, queue for retry with exponential backoff
-5. Store all fetched price data in a `stock_prices` historical table for outcome evaluation
+5. Store all fetched price data in the `stock_daily_prices` table for outcome evaluation
 
 ---
 
@@ -421,37 +462,43 @@ Analysts sometimes delete or edit predictions. We need proof.
 
 ### Public Endpoints (no auth)
 ```
-GET  /api/leaderboard                    # Top analysts by accuracy
-GET  /api/leaderboard?sector=IT          # Sector-filtered leaderboard
-GET  /api/analysts/:slug                 # Analyst profile + stats
-GET  /api/analysts/:slug/predictions     # Analyst's prediction history
-GET  /api/stocks/:symbol                 # Stock page with all predictions
-GET  /api/stocks/:symbol/predictions     # Predictions for a stock
-GET  /api/predictions/recent             # Recently added predictions
-GET  /api/search?q=term                  # Search analysts and stocks
-GET  /api/stats                          # Platform-wide stats
+GET  /api/v1/health                         # Health check
+GET  /api/v1/leaderboard                    # Top analysts by accuracy (paginated)
+GET  /api/v1/leaderboard?sector=IT          # Sector-filtered leaderboard
+GET  /api/v1/analysts/:slug                 # Analyst profile + stats
+GET  /api/v1/analysts/:slug/predictions     # Analyst's prediction history (paginated)
+GET  /api/v1/stocks/:symbol                 # Stock page with all predictions
+GET  /api/v1/stocks/:symbol/predictions     # Predictions for a stock (paginated)
+GET  /api/v1/predictions/recent             # Recently added predictions (paginated)
+GET  /api/v1/search?q=term                  # Search analysts and stocks
+GET  /api/v1/stats                          # Platform-wide stats
 ```
 
 ### Authenticated Endpoints (user)
 ```
-POST /api/predictions                    # Submit a new prediction
-POST /api/extract                        # AI-extract from URL (returns pre-filled data)
-GET  /api/me/watchlist                   # User's watchlist
-POST /api/me/watchlist/:symbol           # Add stock to watchlist
-DELETE /api/me/watchlist/:symbol         # Remove from watchlist
-POST /api/me/follow/:analyst_id          # Follow an analyst
-DELETE /api/me/follow/:analyst_id        # Unfollow
-GET  /api/me/notifications               # User notifications
+POST /api/v1/auth/register                  # Email/password registration
+POST /api/v1/auth/login                     # Email/password login
+POST /api/v1/auth/verify-token              # Verify NextAuth JWT
+GET  /api/v1/auth/me                        # Current user profile
+POST /api/v1/predictions                    # Submit a new prediction
+POST /api/v1/extract                        # AI-extract from URL (returns pre-filled data)
+GET  /api/v1/me/watchlist                   # User's watchlist
+POST /api/v1/me/watchlist/:stock_id         # Add stock to watchlist
+DELETE /api/v1/me/watchlist/:stock_id       # Remove from watchlist
+POST /api/v1/me/follow/:analyst_id          # Follow an analyst
+DELETE /api/v1/me/follow/:analyst_id        # Unfollow
+GET  /api/v1/me/notifications               # User notifications (paginated)
+PATCH /api/v1/me/notifications/:id/read     # Mark notification as read
 ```
 
 ### Admin/Moderator Endpoints
 ```
-GET  /api/admin/review-queue             # Predictions pending review
-POST /api/admin/predictions/:id/approve  # Approve a prediction
-POST /api/admin/predictions/:id/reject   # Reject a prediction
-POST /api/admin/analysts                 # Create/edit analyst profiles
-POST /api/admin/stocks                   # Add stocks manually
-POST /api/admin/trigger-evaluation       # Manually trigger outcome evaluation
+GET  /api/v1/admin/review-queue             # Predictions pending review (paginated)
+POST /api/v1/admin/predictions/:id/approve  # Approve a prediction
+POST /api/v1/admin/predictions/:id/reject   # Reject a prediction
+POST /api/v1/admin/analysts                 # Create/edit analyst profiles
+POST /api/v1/admin/stocks                   # Add stocks manually
+POST /api/v1/admin/trigger-evaluation       # Manually trigger outcome evaluation
 ```
 
 ---
@@ -502,10 +549,13 @@ POST /api/admin/trigger-evaluation       # Manually trigger outcome evaluation
 ## Rollout Timeline (Revised)
 
 ### Sprint 0: Foundation (Days 1-3)
-- [ ] Project scaffolding: backend (FastAPI + Poetry) + frontend (Vite + React + TypeScript)
-- [ ] Database schema: Alembic migrations for all core tables
+- [ ] Project scaffolding: backend (FastAPI + Poetry) + frontend (Next.js + TypeScript)
+- [ ] Database schema: Alembic migrations for all core tables (including `stock_daily_prices` and `notifications`)
 - [ ] CI/CD pipeline: GitHub Actions for lint, test, deploy
 - [ ] Dev environment: Docker Compose (PostgreSQL + Redis)
+- [ ] CORS middleware configuration (FastAPI ↔ Vercel frontend)
+- [ ] Environment variable management (.env files, config module)
+- [ ] Health check endpoint (`GET /api/v1/health`)
 - [ ] Deploy skeleton apps: backend on Railway, frontend on Vercel
 
 ### Sprint 1: Core Data Layer (Days 4-10)
@@ -675,13 +725,18 @@ enex/
 │   │   │   │   ├── admin.py
 │   │   │   │   ├── extract.py          # AI extraction endpoint
 │   │   │   │   └── leaderboard.py
-│   │   │   └── dependencies.py
+│   │   │   └── dependencies.py         # Auth middleware, DB session, etc.
 │   │   ├── models/                      # SQLAlchemy models
 │   │   │   ├── analyst.py
 │   │   │   ├── prediction.py
 │   │   │   ├── stock.py
 │   │   │   ├── user.py
 │   │   │   └── outcome.py
+│   │   ├── schemas/                     # Pydantic request/response schemas
+│   │   │   ├── analyst.py
+│   │   │   ├── prediction.py
+│   │   │   ├── stock.py
+│   │   │   └── common.py               # Pagination, error responses
 │   │   ├── services/                    # Business logic
 │   │   │   ├── prediction_service.py
 │   │   │   ├── evaluation_service.py
@@ -695,40 +750,61 @@ enex/
 │   │   │   ├── scorecard_updater.py
 │   │   │   └── notification_sender.py
 │   │   ├── core/
-│   │   │   ├── config.py
+│   │   │   ├── config.py               # Pydantic Settings (env vars)
 │   │   │   ├── database.py
-│   │   │   ├── security.py
+│   │   │   ├── security.py             # JWT verification, password hashing
 │   │   │   └── redis.py
-│   │   └── main.py
+│   │   └── main.py                     # FastAPI app, CORS, router registration
 │   ├── alembic/                         # Database migrations
 │   ├── tests/
 │   ├── pyproject.toml
 │   └── Dockerfile
 │
-├── frontend/
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── ui/                      # Shadcn components
-│   │   │   ├── AnalystCard.tsx
-│   │   │   ├── PredictionCard.tsx
-│   │   │   ├── AccuracyBadge.tsx
-│   │   │   ├── LeaderboardTable.tsx
-│   │   │   └── SubmissionForm.tsx
-│   │   ├── pages/
-│   │   │   ├── Home.tsx
-│   │   │   ├── Leaderboard.tsx
-│   │   │   ├── AnalystProfile.tsx
-│   │   │   ├── StockPage.tsx
-│   │   │   ├── Submit.tsx
-│   │   │   ├── Dashboard.tsx
-│   │   │   └── Admin.tsx
-│   │   ├── hooks/                       # Custom React hooks
-│   │   ├── lib/                         # API client, utils
-│   │   ├── stores/                      # Zustand stores
-│   │   └── App.tsx
+├── frontend/                            # Next.js 15 (App Router)
+│   ├── app/
+│   │   ├── layout.tsx                   # Root layout (providers, nav, footer)
+│   │   ├── page.tsx                     # Homepage: leaderboard + recent predictions
+│   │   ├── leaderboard/
+│   │   │   └── page.tsx                 # Full leaderboard with filters (SSG + ISR)
+│   │   ├── analyst/
+│   │   │   └── [slug]/
+│   │   │       └── page.tsx             # Analyst profile (SSG + ISR)
+│   │   ├── stock/
+│   │   │   └── [symbol]/
+│   │   │       └── page.tsx             # Stock page (SSG + ISR)
+│   │   ├── predictions/
+│   │   │   └── page.tsx                 # Browse predictions
+│   │   ├── submit/
+│   │   │   └── page.tsx                 # Submit prediction (auth required)
+│   │   ├── search/
+│   │   │   └── page.tsx                 # Search results
+│   │   ├── dashboard/
+│   │   │   └── page.tsx                 # User dashboard (auth required)
+│   │   ├── admin/
+│   │   │   └── page.tsx                 # Admin panel (admin role required)
+│   │   ├── login/
+│   │   │   └── page.tsx                 # OAuth login
+│   │   ├── about/
+│   │   │   └── page.tsx                 # Methodology + about
+│   │   └── api/auth/
+│   │       └── [...nextauth]/
+│   │           └── route.ts             # NextAuth.js API route
+│   ├── components/
+│   │   ├── ui/                          # Shadcn components
+│   │   ├── AnalystCard.tsx
+│   │   ├── PredictionCard.tsx
+│   │   ├── AccuracyBadge.tsx
+│   │   ├── LeaderboardTable.tsx
+│   │   └── SubmissionForm.tsx
+│   ├── lib/
+│   │   ├── api-client.ts                # Auto-generated from OpenAPI spec
+│   │   ├── auth.ts                      # NextAuth.js config
+│   │   └── utils.ts
+│   ├── hooks/                           # Custom React hooks
+│   ├── stores/                          # Zustand stores
 │   ├── public/
 │   ├── package.json
-│   ├── vite.config.ts
+│   ├── next.config.ts
 │   ├── tailwind.config.ts
 │   └── tsconfig.json
 │
@@ -775,10 +851,125 @@ volumes:
 ```
 On push to main:
   1. Run linting (ruff for Python, eslint for TypeScript)
-  2. Run tests (pytest for backend, vitest for frontend)
-  3. Auto-deploy backend to Railway
-  4. Auto-deploy frontend to Vercel
+  2. Run tests (pytest for backend, Jest/React Testing Library for frontend)
+  3. Type check (mypy for Python, tsc --noEmit for TypeScript)
+  4. Auto-deploy backend to Railway
+  5. Auto-deploy frontend to Vercel (auto-detected via Vercel GitHub integration)
 ```
+
+---
+
+## Authentication Strategy
+
+### Architecture
+- **Frontend (Next.js)**: NextAuth.js v5 handles OAuth flow (Google provider), session management, and CSRF protection
+- **Backend (FastAPI)**: Receives JWT tokens from the frontend and verifies them. Does NOT manage OAuth flow directly
+- **Flow**: User logs in via NextAuth.js → NextAuth creates a session + JWT → frontend sends JWT in `Authorization: Bearer <token>` header → FastAPI middleware verifies the JWT signature and extracts user info
+
+### Auth Endpoints
+- `POST /api/v1/auth/register` — email/password registration (hashed with bcrypt via `passlib`)
+- `POST /api/v1/auth/login` — email/password login, returns JWT
+- `POST /api/v1/auth/verify-token` — validate a NextAuth JWT token
+- `GET /api/v1/auth/me` — get current user profile from JWT
+
+### JWT Configuration
+- Access token expiry: 1 hour
+- Refresh token expiry: 7 days
+- Algorithm: HS256 with a shared secret between Next.js and FastAPI
+- Token payload: `{ sub: user_id, role: "user"|"moderator"|"admin", exp: ... }`
+
+---
+
+## Implementation Considerations
+
+> These items should be addressed during implementation (Sprint 0/1) but are documented here for planning purposes.
+
+### API Versioning
+- All endpoints use `/api/v1/` prefix from day 1
+- Example: `GET /api/v1/leaderboard`, `POST /api/v1/predictions`
+- Enables non-breaking changes in future versions
+
+### CORS Configuration
+- FastAPI CORS middleware must allow the Vercel frontend origin
+- Dev: `http://localhost:3000`
+- Prod: `https://enex.vercel.app` (or custom domain)
+- Allow headers: `Authorization`, `Content-Type`
+- Allow methods: `GET`, `POST`, `PUT`, `DELETE`, `OPTIONS`
+
+### Timezone Handling
+- **Store everything in UTC** in the database (use `TIMESTAMPTZ`)
+- **Display in IST** (UTC+5:30) on the frontend
+- Background jobs use IST-aware scheduling (11 PM IST = 5:30 PM UTC)
+- Prediction dates and evaluation dates are `DATE` type (timezone-independent)
+
+### Pagination
+- All list endpoints return paginated responses
+- Standard format: `{ items: [...], total: N, page: 1, page_size: 20, pages: M }`
+- Default page size: 20, max: 100
+- Endpoints: leaderboard, predictions, analyst history, stock predictions, notifications, review queue
+
+### Standard API Error Response
+```json
+{
+  "error": {
+    "code": "PREDICTION_NOT_FOUND",
+    "message": "Prediction with ID xyz does not exist",
+    "details": {}
+  }
+}
+```
+- HTTP status codes: 400 (validation), 401 (unauthorized), 403 (forbidden), 404 (not found), 422 (unprocessable), 500 (server error)
+
+### Environment Variables
+```
+# Backend (.env)
+DATABASE_URL=postgresql+asyncpg://user:pass@host:5432/enex
+REDIS_URL=redis://host:6379/0
+ANTHROPIC_API_KEY=sk-ant-...
+JWT_SECRET=<shared-secret>
+CORS_ORIGINS=http://localhost:3000,https://enex.vercel.app
+SENTRY_DSN=...
+
+# Frontend (.env.local)
+NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
+NEXTAUTH_SECRET=<shared-secret>
+NEXTAUTH_URL=http://localhost:3000
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+```
+
+### Health Check
+- `GET /api/v1/health` — returns `{ status: "ok", db: "connected", redis: "connected", version: "0.1.0" }`
+- Used by Railway for deployment health checks and uptime monitoring
+
+### Default Evaluation Timeframe
+- When a prediction has no explicit `target_date`, use **12 months** from `prediction_date`
+- Stored in `default_eval_date = prediction_date + INTERVAL '12 months'`
+- Configurable via environment variable `DEFAULT_EVAL_MONTHS=12`
+
+### Logging & Monitoring
+- **Structured logging**: Python `structlog` for JSON-formatted logs
+- **Error tracking**: Sentry (free tier) for both backend and frontend
+- **Metrics (post-MVP)**: Track prediction volume, job success/failure rates, API latency
+- **Alerting**: Sentry alerts for error spikes; Railway built-in alerts for resource usage
+
+### Evaluation Price Clarification
+- `highest_price` and `lowest_price` in `prediction_outcomes` refer to **daily closing prices** (not intraday highs/lows)
+- This avoids data cost issues (intraday data is expensive) and is more conservative
+
+---
+
+## Deferred to Phase 3
+
+The following features are intentionally deferred from the MVP to keep scope manageable. They will be implemented in Phase 3 (Community & Engagement):
+
+| Feature | Description | Phase |
+|---------|-------------|-------|
+| **Community moderation model** | Wikipedia-style community moderation with reputation system. MVP uses admin-controlled review queue only. | Phase 3 |
+| **Analyst identity verification** | Process for analysts to claim and verify their profiles. `is_verified` field exists in schema but verification workflow is deferred. | Phase 3 |
+| **Reliability badges** | Visual badge system (green/yellow/red) based on accuracy thresholds. Data is available via scorecards; badge UI is deferred. | Phase 3 |
+| **Analyst claim & rebuttal** | Allow analysts/firms to claim profiles and provide context for failed predictions. | Phase 3 |
+| **Magnitude-weighted scoring** | Weighting scores by boldness of prediction (large upside calls that hit score higher). Simple hit/miss used for MVP. | Phase 4 |
 
 ---
 
