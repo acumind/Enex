@@ -293,6 +293,20 @@ CREATE TABLE user_followed_predictors (
     PRIMARY KEY (user_id, predictor_id)
 );
 
+-- Prediction suggestions (low-effort input — user pastes a URL + optional note)
+CREATE TABLE prediction_suggestions (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    url             VARCHAR(1000) NOT NULL,
+    note            TEXT,                              -- optional user note: "Motilal's target for Reliance in this article"
+    submitted_by    UUID NOT NULL REFERENCES users(id),
+    status          VARCHAR(20) DEFAULT 'pending',     -- 'pending', 'promoted', 'dismissed', 'duplicate'
+    promoted_to     UUID REFERENCES predictions(id),   -- links to the prediction created from this suggestion (nullable)
+    reviewed_by     UUID REFERENCES users(id),
+    reviewed_at     TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX idx_suggestions_status ON prediction_suggestions(status, created_at DESC);
+
 -- Indexes for common queries
 CREATE INDEX idx_predictors_type ON predictors(type);
 CREATE INDEX idx_predictors_parent ON predictors(parent_id) WHERE parent_id IS NOT NULL;
@@ -402,9 +416,11 @@ For each approved prediction where eval_date <= today AND no final outcome exist
 
 ---
 
-## AI-Assisted Prediction Entry Flow
+## Prediction Input Paths
 
-This is the "AI-assisted manual entry" approach — the user drives, AI helps.
+Three ways predictions enter the system in MVP — all ultimately go through the moderator review queue.
+
+### Path 1: Full Submission (User-Driven, AI-Assisted)
 
 ```
 USER                           FRONTEND                        BACKEND
@@ -466,6 +482,65 @@ Rules:
 - If the prediction is from an individual at a firm, set both predictor_name and parent_firm_name
 ```
 
+### Path 2: Suggest a Prediction (Low-Effort User Input)
+
+For users who spot a prediction but don't want to fill out a full form.
+
+```
+USER                           FRONTEND                        BACKEND
+─────                          ────────                        ───────
+
+1. Pastes URL + optional  →    POST /api/v1/predictions/   →   Validate URL format
+   note ("Motilal's             suggest                        Save to prediction_suggestions
+   target for Reliance                                         table with status='pending'
+   in this article")
+
+2. Sees confirmation:     ←    "Thanks! Your suggestion    ←   Return suggestion ID
+   "Suggestion submitted,       has been submitted for
+    we'll review it"            review."
+
+--- LATER (moderator/admin) ---
+
+3. Moderator sees         ←    GET /api/v1/admin/          ←   List pending suggestions
+   suggestion in queue          suggestions                     with user notes
+
+4. Clicks "Promote"       →    POST /api/v1/admin/         →   Runs AI extraction on URL
+                                suggestions/:id/promote         Creates draft prediction
+                                                                in review queue
+                                                                Links suggestion.promoted_to
+
+5. Reviews extracted       →    Normal review flow          →   Approve/reject as usual
+   prediction as usual
+```
+
+**Why this matters**: Lowers the barrier to contribution. Users who browse Moneycontrol or ET Markets can quickly share interesting articles without committing to a full review of extracted fields. Builds community engagement early.
+
+### Path 3: Admin Bulk-Import (Batch URL Extraction)
+
+For admin to seed the system with 20-30 predictions per day during early days.
+
+```
+ADMIN                          FRONTEND                        BACKEND
+─────                          ────────                        ───────
+
+1. Pastes multiple URLs   →    POST /api/v1/admin/         →   Validate URLs
+   (one per line, up to         bulk-extract                    Queue each for AI extraction
+   20 at a time)                { urls: [...] }                 Return job_id
+
+2. Sees progress:         ←    Poll GET /api/v1/admin/     ←   Background worker processes
+   "12/20 extracted,            bulk-extract/:job_id            each URL sequentially
+    3 failed, 5 pending"                                        Updates job status
+
+3. Extracted predictions        Appear in normal review     →   Each extracted prediction
+   land in review queue         queue alongside user             created with status=
+                                submissions                      'pending_review' and
+                                                                 extraction_method='ai_auto'
+
+4. Admin reviews each      →    Normal approve/reject flow  →   Standard review process
+```
+
+**Why this matters**: During the cold-start phase (before community submissions ramp up), the admin can systematically scan financial news sites and bulk-import predictions. This fills the leaderboard with real data and makes the platform useful from day one.
+
 ---
 
 ## Source Archival Strategy
@@ -507,6 +582,8 @@ POST /api/v1/auth/google/callback           # Exchange Google OAuth code → JWT
 GET  /api/v1/auth/me                        # Current user profile
 PATCH /api/v1/auth/me                       # Update profile (add email/phone)
 POST /api/v1/predictions                    # Submit a new prediction
+POST /api/v1/predictions/suggest            # Suggest a prediction (low-effort: URL + optional note)
+GET  /api/v1/me/suggestions                 # User's own suggestions and their status
 POST /api/v1/extract                        # AI-extract from URL (returns pre-filled data)
 GET  /api/v1/me/watchlist                   # User's watchlist
 POST /api/v1/me/watchlist/:stock_id         # Add stock to watchlist
@@ -525,6 +602,17 @@ POST /api/v1/admin/predictions/:id/reject   # Reject a prediction
 POST /api/v1/admin/predictors               # Create/edit predictor profiles (any type)
 POST /api/v1/admin/stocks                   # Add stocks manually
 POST /api/v1/admin/trigger-evaluation       # Manually trigger outcome evaluation
+
+# Suggestion management (moderator + admin)
+GET    /api/v1/admin/suggestions              # List pending suggestions (paginated)
+POST   /api/v1/admin/suggestions/:id/promote  # Promote: run AI extraction → create draft prediction in review queue
+POST   /api/v1/admin/suggestions/:id/dismiss  # Dismiss suggestion: { reason: "..." }
+
+# Bulk import (admin only)
+POST   /api/v1/admin/bulk-extract             # Batch URL extraction: { urls: ["url1", "url2", ...] }
+                                              # Runs AI extraction on each in background
+                                              # Results land in review queue as drafts
+GET    /api/v1/admin/bulk-extract/:job_id     # Check bulk extraction job status
 ```
 
 ---
@@ -555,10 +643,11 @@ POST /api/v1/admin/trigger-evaluation       # Manually trigger outcome evaluatio
 /predictions                   → Browse all predictions with filters
 /submit                        → Submit a prediction (auth required)
 /submit?url=...                → AI-assisted submission with pre-filled URL
+/suggest                       → Suggest a prediction (auth required) — lightweight URL + note form
 /search?q=...                  → Search results (predictors + stocks)
 /login                         → Login page: tabbed (Phone OTP / Email OTP / Google OAuth)
 /dashboard                     → User dashboard: watchlist, followed predictors, alerts
-/admin                         → Admin panel: review queue, manage predictors
+/admin                         → Admin panel: review queue, suggestions, bulk-import, manage predictors
 /about                         → About page, methodology explanation
 ```
 
@@ -571,6 +660,9 @@ POST /api/v1/admin/trigger-evaluation       # Manually trigger outcome evaluatio
 5. **Stock Prediction Spread** — horizontal bar showing all predictor targets for a stock vs current price
 6. **Firm Members List** — for firm/media profiles: grid of individual analysts with their individual scorecards
 7. **Submission Form** — URL input → AI extraction → editable form → submit (predictor autocomplete supports all types)
+8. **Suggestion Form** — minimal: URL input + optional note textarea + submit. One-click contribution for users who spot predictions while browsing.
+9. **Suggestions Queue** (admin) — list of user-suggested URLs with notes, "Promote" button (triggers AI extraction), "Dismiss" button
+10. **Bulk Import Panel** (admin) — textarea for pasting multiple URLs, progress indicator, results summary with links to review queue
 
 ---
 
@@ -578,7 +670,7 @@ POST /api/v1/admin/trigger-evaluation       # Manually trigger outcome evaluatio
 
 ### Sprint 0: Foundation (Days 1-3)
 - [ ] Project scaffolding: backend (FastAPI + uv) + frontend (Next.js + TypeScript)
-- [ ] Database schema: Alembic migrations for all core tables (including `stock_daily_prices` and `notifications`)
+- [ ] Database schema: Alembic migrations for all core tables (including `stock_daily_prices`, `notifications`, and `prediction_suggestions`)
 - [ ] CI/CD pipeline: GitHub Actions for lint, test, deploy
 - [ ] Dev environment: Docker Compose (PostgreSQL + Redis)
 - [ ] CORS middleware configuration (FastAPI ↔ Next.js frontend)
@@ -600,6 +692,9 @@ POST /api/v1/admin/trigger-evaluation       # Manually trigger outcome evaluatio
 - [ ] Manual prediction submission form (frontend)
 - [ ] AI extraction endpoint: URL → Claude → structured prediction data
 - [ ] Pre-filled form flow (paste URL → review → submit)
+- [ ] Suggest-a-prediction: lightweight URL + note form (frontend) + API endpoint
+- [ ] Suggestions queue in admin panel: list, promote (→ AI extract → review queue), dismiss
+- [ ] Admin bulk-import: paste multiple URLs → batch AI extraction → review queue
 - [ ] Source archival (Wayback Machine integration)
 - [ ] Duplicate detection (same predictor + stock + similar target + similar date)
 - [ ] Review queue for moderators
@@ -664,20 +759,20 @@ POST /api/v1/admin/trigger-evaluation       # Manually trigger outcome evaluatio
 
 ## Post-MVP Roadmap (Phases 2-5)
 
-### Phase 2: Full Agentic Ingestion (Month 3-4)
+### Phase 2: Scaling Ingestion (Month 3-4)
 - RSS feed monitoring for financial news sites (Moneycontrol, ET, LiveMint, CNBC TV18)
-- Automated prediction extraction pipeline with confidence thresholds
-- Auto-approve high-confidence extractions, queue others for review
-- Social media monitoring (X/Twitter) for predictor calls (individuals + firm accounts)
+- RSS pipeline: poll every 30 min → filter for prediction articles → AI extraction → review queue
+- Explore licensing structured data from Trendlyne, StockEdge, or similar platforms
+- All RSS/feed-extracted predictions still go through moderator review (no auto-approve)
 
 ### Phase 3: Community & Engagement (Month 4-5)
 - Predictor claim/verify profile system (for individuals, firms, and media houses)
 - Predictor rebuttal feature (add context to misses)
 - Reliability badges (displayed across the platform)
 - Push notifications (web + email digests)
-- Community leaderboard (top submitters)
+- Community leaderboard (top submitters — users who suggest/submit the most approved predictions)
 
-### Phase 4: Advanced Analytics (Month 5-7)
+### Phase 4: Advanced Analytics + Automated Crawling (Month 5-7)
 - Sector-wise accuracy breakdown
 - Bull vs bear market performance
 - Timeframe analysis (short-term vs long-term accuracy)
@@ -685,6 +780,11 @@ POST /api/v1/admin/trigger-evaluation       # Manually trigger outcome evaluatio
 - Herding detection (multiple predictors giving similar targets)
 - "Would you have been better off buying Nifty 50?" comparison
 - Head-to-head predictor comparison tool (any type vs any type)
+- **Automated site crawling** (if data volume from RSS + community is insufficient):
+  - Start with structured financial sites only (not social media)
+  - Invest in entity resolution (mapping extracted names → existing predictors)
+  - Budget for ongoing scraper maintenance
+  - Social media crawling (Twitter/X, YouTube, Telegram) only if clear ROI
 
 ### Phase 5: Monetization (Month 7+)
 - Freemium tier: detailed analytics, API access, premium alerts behind subscription
@@ -761,11 +861,13 @@ enex/
 │   │   │   │   ├── auth.py
 │   │   │   │   ├── admin.py
 │   │   │   │   ├── extract.py           # AI extraction endpoint
+│   │   │   │   ├── suggestions.py      # Suggest-a-prediction + admin suggestion management
 │   │   │   │   └── leaderboard.py
 │   │   │   └── dependencies.py          # Auth middleware, DB session, etc.
 │   │   ├── models/                       # SQLAlchemy models
 │   │   │   ├── predictor.py             # Unified predictor model (individual, firm, media, etc.)
 │   │   │   ├── prediction.py
+│   │   │   ├── suggestion.py            # PredictionSuggestion model
 │   │   │   ├── stock.py
 │   │   │   ├── user.py
 │   │   │   └── outcome.py

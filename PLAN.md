@@ -43,7 +43,9 @@ A web application that:
 
 Start with a **manual + assisted** approach before going fully agentic:
 
-- **Manual entry UI**: Admin/community can submit predictions with source links
+- **Full submission**: User pastes URL → AI extracts prediction details → user reviews pre-filled form → submits → goes to moderator review queue
+- **Suggest a prediction** (low-effort): User pastes just a URL + optional note ("this article has Motilal's target for Reliance"). Goes to a suggestions queue. Moderators or admin can promote it to a full prediction via AI extraction. Designed to lower the barrier — users don't need to verify every field.
+- **Admin bulk-import**: Admin pastes multiple URLs (one per line) → system runs AI extraction on each in the background → results land in review queue as drafts. This lets admin seed 20-30 predictions per day during early days to build leaderboard data before the community grows.
 - **Structured form**: Stock, analyst, target price, date, source URL, screenshot/archive
 - **Duplicate detection**: Prevent the same prediction being entered twice
 - **Source archival**: Save a snapshot (screenshot or web archive link) of the source as proof — analysts sometimes delete or edit their predictions
@@ -94,34 +96,40 @@ Start with a **manual + assisted** approach before going fully agentic:
 
 ---
 
-## Phase 2: Agentic Ingestion
+## Phase 2: Scaling Prediction Ingestion
 
-This is where the system becomes truly powerful.
+### 2.1 RSS Feed Monitoring (Semi-Automated)
 
-### 2.1 AI-Powered Prediction Extraction
+Subscribe to RSS feeds from major financial news sites. New articles are queued, and the system runs AI extraction to identify any stock predictions. All extracted predictions go to the review queue — no auto-approve.
 
-Build agents (using Claude API) that can:
+- **RSS sources**: Moneycontrol, Economic Times Markets, LiveMint, Business Standard
+- **Pipeline**: RSS poll (every 30 min) → filter for prediction-related articles → AI extraction → review queue
+- **Human-in-the-loop**: Moderators review all RSS-extracted predictions before approval. This ensures data quality while significantly increasing volume.
 
-- **Monitor news sources**: Scrape/RSS-feed financial news sites for articles containing price targets
-- **Parse predictions from unstructured text**: Extract structured data (analyst name, stock, target price, timeframe) from natural language articles
-  - Example input: *"Motilal Oswal's Rajat Rajgarhia sees Infosys reaching Rs 2,100 in the next 12 months"*
-  - Extracted: `{ analyst: "Rajat Rajgarhia", firm: "Motilal Oswal", stock: "INFY", target: 2100, currency: "INR", timeframe: "12 months", date: "2026-02-20" }`
-- **Monitor social media**: Track prominent analysts on X/Twitter for stock calls
-- **Monitor TV transcripts**: If transcripts of financial TV shows (CNBC, ET Now, etc.) are available
-- **Confidence scoring**: Agent rates its own extraction confidence; low-confidence extractions go to human review queue
+### 2.2 Licensed Data Feeds (If Available)
 
-### 2.2 Human-in-the-Loop Review
+Explore licensing structured analyst target data from platforms like Trendlyne or StockEdge. This is cleaner, legal, and already structured — no scraping or extraction errors.
 
-- Extracted predictions land in a **review queue**
-- Community moderators or admins verify before publishing
-- Over time, high-confidence extractions can be auto-approved
-- This prevents garbage data from polluting accuracy scores
+### 2.3 Automated Site Crawling & Social Media (Deferred)
 
-### 2.3 Source Monitoring Pipeline
+Full-scale scraping of financial sites and social media monitoring is **deferred to Phase 4+** due to:
+
+- **Legal risk**: Most financial sites have anti-scraping TOS. No clear safe harbor under Indian IT Act.
+- **Cost**: Running LLM extraction on thousands of articles/tweets daily = significant API costs.
+- **Noise**: Social media (Twitter/X, YouTube, Telegram) is 95% noise for actionable predictions with specific price targets.
+- **Maintenance**: Scrapers break frequently as site layouts change.
+
+If pursued later, the approach would be:
+- Start with structured sites only (not social media)
+- License data where possible rather than scraping
+- Invest in robust entity resolution (mapping names to predictors)
+- Budget for ongoing scraper maintenance
 
 ```
-Sources (RSS/API/Scraper)
-    → Raw Article Queue
+Phase 2 Pipeline (RSS + Licensed Data):
+
+RSS Feeds / Licensed APIs
+    → Article Queue (filtered for predictions)
     → AI Extraction Agent (Claude)
     → Structured Prediction (draft)
     → Review Queue (human verification)
@@ -230,9 +238,9 @@ Days 42-48:  Sprint 6 — Historical seeding, landing page, polish
 Days 49-55:  Sprint 7 — Beta feedback, bug fixes, rate limiting
 Days 56-62:  Sprint 8 — Load testing, security audit, legal pages
              --- Public Beta Launch — ~Week 9 ---
-Month 3-4:   Phase 2 — Agentic ingestion (RSS, social media, auto-extraction)
+Month 3-4:   Phase 2 — RSS feed monitoring, licensed data feeds, scaled ingestion
 Month 4-5:   Phase 3 — Community features, analyst verification, badges
-Month 5-7:   Phase 4 — Advanced analytics, comparison tools
+Month 5-7:   Phase 4 — Advanced analytics, comparison tools, automated crawling (if needed)
 Month 7+:    Phase 5 — Monetization, public API, premium features
 ```
 
@@ -271,3 +279,4 @@ Month 7+:    Phase 5 — Monetization, public API, premium features
 | 7 | Unified predictor model? | **Resolved** | Single `predictors` table covers individuals, firms, media houses, influencers. Individuals link to parent firm via `parent_id`. Scorecards and leaderboard apply to all types equally. |
 | 8 | Authentication methods? | **Resolved** | Three login paths: Google OAuth + Email OTP + Mobile OTP (via MSG91). All in MVP. Indian retail investors expect mobile OTP. |
 | 9 | User roles and management? | **Resolved** | Four roles: visitor (unauth), user, moderator, admin. All submissions reviewed by moderators. Admin manages roles from UI. Ban/suspend capability in MVP. First admin seeded via CLI. |
+| 10 | Prediction input methods? | **Resolved** | MVP: three input paths — full user submission (URL → AI extract → form → review), suggest-a-prediction (low-effort URL+note → suggestions queue), admin bulk-import (batch URLs → AI extraction → review queue). Automated site crawling deferred to Phase 4+. |
