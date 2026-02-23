@@ -31,12 +31,13 @@ A web application that:
 
 | Entity | Key Fields |
 |--------|------------|
-| **Analyst** | name, firm, designation, bio, social_links, avatar, created_at |
-| **Firm/MediaHouse** | name, type (brokerage/media/independent), website, logo |
-| **Prediction** | analyst_id, stock_symbol, prediction_type (target_price / buy / sell / hold / sector_call), target_price, target_date, prediction_date, source_url, source_type (TV/article/report/tweet), confidence_level (if stated), raw_quote |
+| **Predictor** | name, slug, type (individual/brokerage/research_firm/media_house/influencer), parent_id (self-ref for individual→firm), designation, bio, website, social_links, avatar, sebi_reg_no, is_verified |
+| **Prediction** | predictor_id, stock_symbol, prediction_type (target_price / buy / sell / hold / sector_call), target_price, target_date, prediction_date, source_url, source_type (TV/article/report/tweet), confidence_level (if stated), raw_quote |
 | **Stock** | symbol, exchange, name, sector, current_price (cached) |
 | **PredictionOutcome** | prediction_id, outcome_status (hit/miss/partial/expired/pending), actual_price_at_target_date, deviation_percentage, evaluated_at |
-| **AnalystScorecard** | analyst_id, total_predictions, hits, misses, accuracy_pct, avg_deviation, sector_accuracy (JSON), timeframe_accuracy (JSON), last_updated |
+| **PredictorScorecard** | predictor_id, total_predictions, hits, misses, accuracy_pct, avg_deviation, sector_accuracy (JSON), timeframe_accuracy (JSON), last_updated |
+
+> **Unified Predictor model:** Any entity that publishes stock predictions — individual analysts, brokerage research desks, media houses, influencers, Telegram channels — is tracked as a **Predictor**. Individuals can be linked to their parent firm via `parent_id`, enabling both individual and firm-level accountability. The leaderboard ranks all predictor types together (with type filters).
 
 ### 1.2 Prediction Ingestion (Semi-Automated)
 
@@ -59,11 +60,11 @@ Start with a **manual + assisted** approach before going fully agentic:
 
 ### 1.4 Basic Web Interface
 
-- **Home page**: Leaderboard of analysts ranked by accuracy
-- **Analyst profile page**: Full history of predictions, hit/miss breakdown, accuracy trend over time
+- **Home page**: Leaderboard of predictors (analysts, firms, media) ranked by accuracy
+- **Predictor profile page**: Full history of predictions, hit/miss breakdown, accuracy trend over time. For firms: also shows individual analysts and their roll-up stats
 - **Stock page**: All predictions made for a given stock, with outcomes
-- **Search**: Find analysts or stocks quickly
-- **Filters**: By sector, timeframe, firm, prediction type
+- **Search**: Find predictors or stocks quickly
+- **Filters**: By sector, timeframe, predictor type (individual/firm/media), prediction type
 
 ### 1.5 Tech Stack
 
@@ -123,14 +124,14 @@ Sources (RSS/API/Scraper)
 
 ### 3.1 User Accounts & Features
 
-- **Follow analysts**: Get notified when they make new predictions
+- **Follow predictors**: Get notified when any analyst, firm, or media house makes new predictions
 - **Watchlist**: Track predictions for stocks you own or are interested in
-- **Alerts**: "Analyst X who gave a target of Y for stock Z — that prediction just expired at 40% below target"
-- **Community submissions**: Users can submit predictions they spot, with source links (moderated)
+- **Alerts**: "Predictor X who gave a target of Y for stock Z — that prediction just expired at 40% below target"
+- **Community submissions**: Users can submit predictions they spot (from any source type), with source links (moderated)
 
-### 3.2 Analyst Response System
+### 3.2 Predictor Response System
 
-- Allow analysts/firms to **claim their profile** and respond
+- Allow any predictor (individual, firm, media house) to **claim their profile** and respond
 - They can provide context for why a prediction failed
 - This adds fairness — markets are unpredictable, context matters
 - But the data remains: the prediction was made, and the outcome is what it is
@@ -150,12 +151,13 @@ Sources (RSS/API/Scraper)
 
 ### 4.1 Deep Analytics
 
-- **Sector-wise accuracy**: Which analysts are best at which sectors?
+- **Sector-wise accuracy**: Which predictors are best at which sectors?
 - **Timeframe analysis**: Are they better at short-term or long-term calls?
-- **Bull vs. Bear accuracy**: Some analysts are only accurate in bull markets
-- **Firm-level aggregation**: Which brokerages have the best overall track record?
-- **Contrarian indicator**: Some analysts are so consistently wrong they become useful as reverse indicators
-- **Herding detection**: Flag when multiple analysts give suspiciously similar targets simultaneously
+- **Bull vs. Bear accuracy**: Some predictors are only accurate in bull markets
+- **Entity-type comparison**: Are brokerages more accurate than media houses? Do individual analysts outperform their firm's research desk?
+- **Firm roll-up**: Aggregate accuracy of all individuals linked to a firm, vs the firm's own direct predictions
+- **Contrarian indicator**: Some predictors are so consistently wrong they become useful as reverse indicators
+- **Herding detection**: Flag when multiple predictors give suspiciously similar targets simultaneously
 
 ### 4.2 Market Context Layer
 
@@ -164,9 +166,9 @@ Sources (RSS/API/Scraper)
 
 ### 4.3 Comparison Tools
 
-- Compare two analysts head-to-head
-- Compare an analyst's picks against a simple index fund return
-- "Would you have been better off ignoring this analyst and buying Nifty 50?"
+- Compare two predictors head-to-head (any type: analyst vs analyst, firm vs firm, firm vs media)
+- Compare a predictor's picks against a simple index fund return
+- "Would you have been better off ignoring this predictor and buying Nifty 50?"
 
 ---
 
@@ -180,7 +182,7 @@ Sources (RSS/API/Scraper)
 | **API access** | Let fintech apps, robo-advisors, and other platforms query analyst reliability scores |
 | **Institutional reports** | Sell aggregated accuracy reports to firms who want to benchmark their analysts |
 | **Advertising** | Financial product ads (tasteful, non-conflicting) |
-| **Premium alerts** | Real-time notifications when high-accuracy analysts make new calls |
+| **Premium alerts** | Real-time notifications when high-accuracy predictors make new calls |
 
 ### 5.2 Data Moat
 
@@ -192,11 +194,11 @@ Over time, the historical prediction database becomes extremely valuable — no 
 
 | Risk | Impact | Mitigation |
 |------|--------|------------|
-| **Legal pushback from analysts/firms** | They may claim defamation or IP violations | Only use publicly available predictions, always link to source, present data factually without editorializing, allow analyst rebuttals |
+| **Legal pushback from predictors** | They may claim defamation or IP violations | Only use publicly available predictions, always link to source, present data factually without editorializing, allow predictor rebuttals |
 | **Data accuracy** | Wrong extraction = wrong scores = lost credibility | Human review queue, confidence thresholds, community correction mechanism, source archival |
 | **Market data costs** | Real-time price feeds are expensive | Use end-of-day data (sufficient for target evaluation), free APIs where possible, cache aggressively |
 | **Cold start problem** | Not useful until enough predictions are tracked | Seed with historical data (manually enter well-known past predictions), focus on one market (e.g., Indian equities) first |
-| **Analyst gaming** | Once tracked, analysts may give vague predictions to avoid being scored | Score vagueness as a negative signal; only track specific, falsifiable predictions |
+| **Predictor gaming** | Once tracked, predictors may give vague predictions to avoid being scored | Score vagueness as a negative signal; only track specific, falsifiable predictions |
 | **Scope creep** | Trying to cover all markets, all analysts too soon | Start with one market (e.g., NSE/BSE), top 50 analysts, and expand from there |
 
 ---
@@ -230,7 +232,7 @@ Month 7+:    Phase 5 — Monetization, public API, premium features
 1. **One market first**: Indian equities (NSE/BSE) — large retail investor base, lots of analyst activity on TV and social media
 2. **Equity only**: No derivatives, commodities, or forex predictions initially
 3. **Target price predictions only**: The most specific, falsifiable type — skip vague "market outlook" predictions
-4. **Top 100 analysts/firms**: Don't try to track everyone; start with the most followed/influential ones
+4. **Top 100 predictors**: Don't try to track everyone; start with the most followed/influential analysts, firms, and media houses
 5. **English language only**: Hindi/regional language extraction can come later
 
 ---
@@ -239,7 +241,7 @@ Month 7+:    Phase 5 — Monetization, public API, premium features
 
 - **Data quality**: >95% accuracy in prediction-to-outcome mapping
 - **Coverage**: 500+ tracked predictions within first 3 months of beta
-- **User engagement**: Users checking analyst reliability before acting on tips
+- **User engagement**: Users checking predictor reliability before acting on tips
 - **Community trust**: Active community submissions and corrections
 - **Retention**: Users returning weekly to check leaderboard updates
 
@@ -253,5 +255,6 @@ Month 7+:    Phase 5 — Monetization, public API, premium features
 | 2 | Prediction scope: Only equity price targets? | **Resolved** | Price targets only. Most specific and falsifiable. |
 | 3 | Scoring: Simple hit/miss or weighted by magnitude? | **Resolved** | Simple hit/miss with 5% tolerance band for partial hits. Magnitude weighting deferred to Phase 4. |
 | 4 | Community moderation model? | **Deferred** | Start with admin-controlled review queue. Wikipedia-style community moderation to be designed in Phase 3. |
-| 5 | Identity verification for analysts? | **Deferred** | `is_verified` field exists in schema. Verification process (claim profile, proof of identity) to be designed in Phase 3. |
-| 6 | Historical seeding: How far back? | **Resolved** | ~100 well-known predictions from the past 1-2 years. Focus on top 20-30 most-followed analysts/firms. |
+| 5 | Identity verification for predictors? | **Deferred** | `is_verified` field exists in schema. Verification process (claim profile, proof of identity) to be designed in Phase 3. |
+| 6 | Historical seeding: How far back? | **Resolved** | ~100 well-known predictions from the past 1-2 years. Focus on top 20-30 most-followed predictors. |
+| 7 | Unified predictor model? | **Resolved** | Single `predictors` table covers individuals, firms, media houses, influencers. Individuals link to parent firm via `parent_id`. Scorecards and leaderboard apply to all types equally. |
