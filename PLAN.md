@@ -31,18 +31,21 @@ A web application that:
 
 | Entity | Key Fields |
 |--------|------------|
-| **Analyst** | name, firm, designation, bio, social_links, avatar, created_at |
-| **Firm/MediaHouse** | name, type (brokerage/media/independent), website, logo |
-| **Prediction** | analyst_id, stock_symbol, prediction_type (target_price / buy / sell / hold / sector_call), target_price, target_date, prediction_date, source_url, source_type (TV/article/report/tweet), confidence_level (if stated), raw_quote |
+| **Predictor** | name, slug, type (individual/brokerage/research_firm/media_house/influencer), parent_id (self-ref for individual→firm), designation, bio, website, social_links, avatar, sebi_reg_no, is_verified |
+| **Prediction** | predictor_id, stock_symbol, prediction_type (target_price / buy / sell / hold / sector_call), target_price, target_date, prediction_date, source_url, source_type (TV/article/report/tweet), confidence_level (if stated), raw_quote |
 | **Stock** | symbol, exchange, name, sector, current_price (cached) |
 | **PredictionOutcome** | prediction_id, outcome_status (hit/miss/partial/expired/pending), actual_price_at_target_date, deviation_percentage, evaluated_at |
-| **AnalystScorecard** | analyst_id, total_predictions, hits, misses, accuracy_pct, avg_deviation, sector_accuracy (JSON), timeframe_accuracy (JSON), last_updated |
+| **PredictorScorecard** | predictor_id, total_predictions, hits, misses, accuracy_pct, avg_deviation, sector_accuracy (JSON), timeframe_accuracy (JSON), last_updated |
+
+> **Unified Predictor model:** Any entity that publishes stock predictions — individual analysts, brokerage research desks, media houses, influencers, Telegram channels — is tracked as a **Predictor**. Individuals can be linked to their parent firm via `parent_id`, enabling both individual and firm-level accountability. The leaderboard ranks all predictor types together (with type filters).
 
 ### 1.2 Prediction Ingestion (Semi-Automated)
 
 Start with a **manual + assisted** approach before going fully agentic:
 
-- **Manual entry UI**: Admin/community can submit predictions with source links
+- **Full submission**: User pastes URL → AI extracts prediction details → user reviews pre-filled form → submits → goes to moderator review queue
+- **Suggest a prediction** (low-effort): User pastes just a URL + optional note ("this article has Motilal's target for Reliance"). Goes to a suggestions queue. Moderators or admin can promote it to a full prediction via AI extraction. Designed to lower the barrier — users don't need to verify every field.
+- **Admin bulk-import**: Admin pastes multiple URLs (one per line) → system runs AI extraction on each in the background → results land in review queue as drafts. This lets admin seed 20-30 predictions per day during early days to build leaderboard data before the community grows.
 - **Structured form**: Stock, analyst, target price, date, source URL, screenshot/archive
 - **Duplicate detection**: Prevent the same prediction being entered twice
 - **Source archival**: Save a snapshot (screenshot or web archive link) of the source as proof — analysts sometimes delete or edit their predictions
@@ -59,55 +62,74 @@ Start with a **manual + assisted** approach before going fully agentic:
 
 ### 1.4 Basic Web Interface
 
-- **Home page**: Leaderboard of analysts ranked by accuracy
-- **Analyst profile page**: Full history of predictions, hit/miss breakdown, accuracy trend over time
+- **Home page**: Leaderboard of predictors (analysts, firms, media) ranked by accuracy
+- **Predictor profile page**: Full history of predictions, hit/miss breakdown, accuracy trend over time. For firms: also shows individual analysts and their roll-up stats
 - **Stock page**: All predictions made for a given stock, with outcomes
-- **Search**: Find analysts or stocks quickly
-- **Filters**: By sector, timeframe, firm, prediction type
+- **Search**: Find predictors or stocks quickly
+- **Filters**: By sector, timeframe, predictor type (individual/firm/media), prediction type
 
-### 1.5 Tech Stack (Recommended)
+### 1.5 User Roles & Permissions
+
+| Role | Who | Capabilities |
+|------|-----|-------------|
+| **Visitor** | Unauthenticated | Browse leaderboard, predictor profiles, stock pages, search. Read-only access to all public data. |
+| **User** | Registered (OTP/OAuth) | Everything a visitor can + submit predictions (go to review queue), follow predictors, watchlist stocks, receive notifications, manage own profile. |
+| **Moderator** | Promoted by admin | Everything a user can + access review queue, approve/reject predictions, edit predictor profiles, flag/edit incorrect data. |
+| **Admin** | System owner | Full access: everything above + manage user roles (promote/demote moderators and admins), ban/suspend users, create/edit/delete predictors and stocks, trigger evaluation jobs, access system stats, seed data. |
+
+> **Key rule:** All user-submitted predictions go through the moderator review queue in MVP, regardless of submitter history. No auto-approve for any user role.
+
+### 1.6 Tech Stack
 
 | Layer | Choice | Rationale |
 |-------|--------|-----------|
-| **Frontend** | Next.js (React) | SSR for SEO (people will search for analyst names), good DX |
-| **Backend API** | Next.js API routes + tRPC or REST | Keep it simple in one repo initially |
+| **Frontend** | Next.js (React) | SSR/SSG for SEO (analyst names, stock pages), App Router, good DX |
+| **Backend API** | FastAPI (Python) — separate service | Python's data analysis ecosystem (pandas, yfinance, nsetools), best AI/ML integration (Anthropic SDK), async performance |
 | **Database** | PostgreSQL | Relational data with complex queries (joins, aggregations, time-series) |
-| **ORM** | Prisma or Drizzle | Type-safe DB access |
-| **Cache** | Redis | For leaderboard caching, rate limiting |
-| **Job Scheduler** | BullMQ (Redis-backed) or pg-cron | Daily outcome evaluation, price fetching |
-| **Auth** | NextAuth.js / Clerk | User accounts for community submissions |
-| **Deployment** | Vercel (frontend) + Railway/Fly.io (backend/DB) or a single VPS | Cost-effective for MVP |
+| **ORM** | SQLAlchemy 2.0 + Alembic (migrations) | Mature Python ORM, excellent PostgreSQL support |
+| **Cache** | Redis (Upstash) | For leaderboard caching, rate limiting, job queues |
+| **Job Scheduler** | Celery + Redis (or ARQ for lightweight async) | Daily outcome evaluation, price fetching, notifications |
+| **Auth** | NextAuth.js (frontend) + JWT verification (backend) | Google OAuth + Email OTP + Mobile OTP (MSG91). Three login paths for maximum accessibility |
+| **Deployment** | Azure Container Apps (both frontend + backend) | Serverless containers, auto-scaling, single cloud provider |
+
+> **Architecture note:** Frontend and backend are separate services communicating via REST API. This enables independent deployment, leverages Python's strengths for financial data processing, and keeps the API consumable by future mobile apps or third-party integrations.
 
 ---
 
-## Phase 2: Agentic Ingestion
+## Phase 2: Scaling Prediction Ingestion
 
-This is where the system becomes truly powerful.
+### 2.1 RSS Feed Monitoring (Semi-Automated)
 
-### 2.1 AI-Powered Prediction Extraction
+Subscribe to RSS feeds from major financial news sites. New articles are queued, and the system runs AI extraction to identify any stock predictions. All extracted predictions go to the review queue — no auto-approve.
 
-Build agents (using Claude API) that can:
+- **RSS sources**: Moneycontrol, Economic Times Markets, LiveMint, Business Standard
+- **Pipeline**: RSS poll (every 30 min) → filter for prediction-related articles → AI extraction → review queue
+- **Human-in-the-loop**: Moderators review all RSS-extracted predictions before approval. This ensures data quality while significantly increasing volume.
 
-- **Monitor news sources**: Scrape/RSS-feed financial news sites for articles containing price targets
-- **Parse predictions from unstructured text**: Extract structured data (analyst name, stock, target price, timeframe) from natural language articles
-  - Example input: *"Motilal Oswal's Rajat Rajgarhia sees Infosys reaching Rs 2,100 in the next 12 months"*
-  - Extracted: `{ analyst: "Rajat Rajgarhia", firm: "Motilal Oswal", stock: "INFY", target: 2100, currency: "INR", timeframe: "12 months", date: "2026-02-20" }`
-- **Monitor social media**: Track prominent analysts on X/Twitter for stock calls
-- **Monitor TV transcripts**: If transcripts of financial TV shows (CNBC, ET Now, etc.) are available
-- **Confidence scoring**: Agent rates its own extraction confidence; low-confidence extractions go to human review queue
+### 2.2 Licensed Data Feeds (If Available)
 
-### 2.2 Human-in-the-Loop Review
+Explore licensing structured analyst target data from platforms like Trendlyne or StockEdge. This is cleaner, legal, and already structured — no scraping or extraction errors.
 
-- Extracted predictions land in a **review queue**
-- Community moderators or admins verify before publishing
-- Over time, high-confidence extractions can be auto-approved
-- This prevents garbage data from polluting accuracy scores
+### 2.3 Automated Site Crawling & Social Media (Deferred)
 
-### 2.3 Source Monitoring Pipeline
+Full-scale scraping of financial sites and social media monitoring is **deferred to Phase 4+** due to:
+
+- **Legal risk**: Most financial sites have anti-scraping TOS. No clear safe harbor under Indian IT Act.
+- **Cost**: Running LLM extraction on thousands of articles/tweets daily = significant API costs.
+- **Noise**: Social media (Twitter/X, YouTube, Telegram) is 95% noise for actionable predictions with specific price targets.
+- **Maintenance**: Scrapers break frequently as site layouts change.
+
+If pursued later, the approach would be:
+- Start with structured sites only (not social media)
+- License data where possible rather than scraping
+- Invest in robust entity resolution (mapping names to predictors)
+- Budget for ongoing scraper maintenance
 
 ```
-Sources (RSS/API/Scraper)
-    → Raw Article Queue
+Phase 2 Pipeline (RSS + Licensed Data):
+
+RSS Feeds / Licensed APIs
+    → Article Queue (filtered for predictions)
     → AI Extraction Agent (Claude)
     → Structured Prediction (draft)
     → Review Queue (human verification)
@@ -121,14 +143,14 @@ Sources (RSS/API/Scraper)
 
 ### 3.1 User Accounts & Features
 
-- **Follow analysts**: Get notified when they make new predictions
+- **Follow predictors**: Get notified when any analyst, firm, or media house makes new predictions
 - **Watchlist**: Track predictions for stocks you own or are interested in
-- **Alerts**: "Analyst X who gave a target of Y for stock Z — that prediction just expired at 40% below target"
-- **Community submissions**: Users can submit predictions they spot, with source links (moderated)
+- **Alerts**: "Predictor X who gave a target of Y for stock Z — that prediction just expired at 40% below target"
+- **Community submissions**: Users can submit predictions they spot (from any source type), with source links (moderated)
 
-### 3.2 Analyst Response System
+### 3.2 Predictor Response System
 
-- Allow analysts/firms to **claim their profile** and respond
+- Allow any predictor (individual, firm, media house) to **claim their profile** and respond
 - They can provide context for why a prediction failed
 - This adds fairness — markets are unpredictable, context matters
 - But the data remains: the prediction was made, and the outcome is what it is
@@ -148,12 +170,13 @@ Sources (RSS/API/Scraper)
 
 ### 4.1 Deep Analytics
 
-- **Sector-wise accuracy**: Which analysts are best at which sectors?
+- **Sector-wise accuracy**: Which predictors are best at which sectors?
 - **Timeframe analysis**: Are they better at short-term or long-term calls?
-- **Bull vs. Bear accuracy**: Some analysts are only accurate in bull markets
-- **Firm-level aggregation**: Which brokerages have the best overall track record?
-- **Contrarian indicator**: Some analysts are so consistently wrong they become useful as reverse indicators
-- **Herding detection**: Flag when multiple analysts give suspiciously similar targets simultaneously
+- **Bull vs. Bear accuracy**: Some predictors are only accurate in bull markets
+- **Entity-type comparison**: Are brokerages more accurate than media houses? Do individual analysts outperform their firm's research desk?
+- **Firm roll-up**: Aggregate accuracy of all individuals linked to a firm, vs the firm's own direct predictions
+- **Contrarian indicator**: Some predictors are so consistently wrong they become useful as reverse indicators
+- **Herding detection**: Flag when multiple predictors give suspiciously similar targets simultaneously
 
 ### 4.2 Market Context Layer
 
@@ -162,9 +185,9 @@ Sources (RSS/API/Scraper)
 
 ### 4.3 Comparison Tools
 
-- Compare two analysts head-to-head
-- Compare an analyst's picks against a simple index fund return
-- "Would you have been better off ignoring this analyst and buying Nifty 50?"
+- Compare two predictors head-to-head (any type: analyst vs analyst, firm vs firm, firm vs media)
+- Compare a predictor's picks against a simple index fund return
+- "Would you have been better off ignoring this predictor and buying Nifty 50?"
 
 ---
 
@@ -178,7 +201,7 @@ Sources (RSS/API/Scraper)
 | **API access** | Let fintech apps, robo-advisors, and other platforms query analyst reliability scores |
 | **Institutional reports** | Sell aggregated accuracy reports to firms who want to benchmark their analysts |
 | **Advertising** | Financial product ads (tasteful, non-conflicting) |
-| **Premium alerts** | Real-time notifications when high-accuracy analysts make new calls |
+| **Premium alerts** | Real-time notifications when high-accuracy predictors make new calls |
 
 ### 5.2 Data Moat
 
@@ -190,30 +213,35 @@ Over time, the historical prediction database becomes extremely valuable — no 
 
 | Risk | Impact | Mitigation |
 |------|--------|------------|
-| **Legal pushback from analysts/firms** | They may claim defamation or IP violations | Only use publicly available predictions, always link to source, present data factually without editorializing, allow analyst rebuttals |
+| **Legal pushback from predictors** | They may claim defamation or IP violations | Only use publicly available predictions, always link to source, present data factually without editorializing, allow predictor rebuttals |
 | **Data accuracy** | Wrong extraction = wrong scores = lost credibility | Human review queue, confidence thresholds, community correction mechanism, source archival |
 | **Market data costs** | Real-time price feeds are expensive | Use end-of-day data (sufficient for target evaluation), free APIs where possible, cache aggressively |
 | **Cold start problem** | Not useful until enough predictions are tracked | Seed with historical data (manually enter well-known past predictions), focus on one market (e.g., Indian equities) first |
-| **Analyst gaming** | Once tracked, analysts may give vague predictions to avoid being scored | Score vagueness as a negative signal; only track specific, falsifiable predictions |
+| **Predictor gaming** | Once tracked, predictors may give vague predictions to avoid being scored | Score vagueness as a negative signal; only track specific, falsifiable predictions |
 | **Scope creep** | Trying to cover all markets, all analysts too soon | Start with one market (e.g., NSE/BSE), top 50 analysts, and expand from there |
 
 ---
 
 ## Rollout Sequence
 
+> See ROLLOUT_PLAN.md for detailed sprint breakdown.
+
 ```
-Week 1-2:   Project scaffolding, DB schema, basic CRUD API
-Week 3-4:   Manual prediction entry UI, stock price integration
-Week 5-6:   Outcome evaluation engine, basic leaderboard
-Week 7-8:   Analyst profile pages, search, filtering
-            --- MVP Launch (invite-only beta) ---
-Week 9-10:  AI extraction agent (Claude) for news articles
-Week 11-12: Review queue, community submission system
-            --- Public Beta ---
-Week 13+:   User accounts, alerts, advanced analytics
-            Social media monitoring, TV transcript parsing
-            Mobile-responsive improvements
-            API for third-party access
+Days 1-3:    Sprint 0 — Project scaffolding, DB schema, CI/CD, dev environment
+Days 4-10:   Sprint 1 — Core CRUD APIs, stock price fetcher, seed data
+Days 11-17:  Sprint 2 — Prediction entry UI, AI extraction, source archival
+Days 18-24:  Sprint 3 — Outcome evaluation engine, scorecard computation
+Days 25-34:  Sprint 4 — Public interface: leaderboard, profiles, search, SEO
+Days 35-41:  Sprint 5 — User auth, watchlists, follow, notifications
+Days 42-48:  Sprint 6 — Historical seeding, landing page, polish
+             --- MVP Launch (invite-only beta) — ~Week 7 ---
+Days 49-55:  Sprint 7 — Beta feedback, bug fixes, rate limiting
+Days 56-62:  Sprint 8 — Load testing, security audit, legal pages
+             --- Public Beta Launch — ~Week 9 ---
+Month 3-4:   Phase 2 — RSS feed monitoring, licensed data feeds, scaled ingestion
+Month 4-5:   Phase 3 — Community features, analyst verification, badges
+Month 5-7:   Phase 4 — Advanced analytics, comparison tools, automated crawling (if needed)
+Month 7+:    Phase 5 — Monetization, public API, premium features
 ```
 
 ---
@@ -223,7 +251,7 @@ Week 13+:   User accounts, alerts, advanced analytics
 1. **One market first**: Indian equities (NSE/BSE) — large retail investor base, lots of analyst activity on TV and social media
 2. **Equity only**: No derivatives, commodities, or forex predictions initially
 3. **Target price predictions only**: The most specific, falsifiable type — skip vague "market outlook" predictions
-4. **Top 100 analysts/firms**: Don't try to track everyone; start with the most followed/influential ones
+4. **Top 100 predictors**: Don't try to track everyone; start with the most followed/influential analysts, firms, and media houses
 5. **English language only**: Hindi/regional language extraction can come later
 
 ---
@@ -232,17 +260,23 @@ Week 13+:   User accounts, alerts, advanced analytics
 
 - **Data quality**: >95% accuracy in prediction-to-outcome mapping
 - **Coverage**: 500+ tracked predictions within first 3 months of beta
-- **User engagement**: Users checking analyst reliability before acting on tips
+- **User engagement**: Users checking predictor reliability before acting on tips
 - **Community trust**: Active community submissions and corrections
 - **Retention**: Users returning weekly to check leaderboard updates
 
 ---
 
-## Open Questions to Decide Before Coding
+## Open Questions — Resolution Status
 
-1. **Target market**: India-first, or US equities, or both simultaneously?
-2. **Prediction scope**: Only equity price targets, or also include sector calls, index predictions, macro calls?
-3. **Scoring methodology**: Simple hit/miss, or weighted by magnitude of prediction (a 100% upside call that hits should score higher than a 5% call)?
-4. **Community moderation model**: Fully admin-controlled, or Wikipedia-style community moderation?
-5. **Identity verification for analysts**: How do we confirm an analyst profile maps to the real person?
-6. **Historical seeding**: How far back should we go to seed past predictions? 1 year? 5 years?
+| # | Question | Status | Decision |
+|---|----------|--------|----------|
+| 1 | Target market: India-first, or US equities, or both? | **Resolved** | India-first (NSE/BSE). Large retail base, active analyst ecosystem. |
+| 2 | Prediction scope: Only equity price targets? | **Resolved** | Price targets only. Most specific and falsifiable. |
+| 3 | Scoring: Simple hit/miss or weighted by magnitude? | **Resolved** | Simple hit/miss with 5% tolerance band for partial hits. Magnitude weighting deferred to Phase 4. |
+| 4 | Community moderation model? | **Deferred** | Start with admin-controlled review queue. Wikipedia-style community moderation to be designed in Phase 3. |
+| 5 | Identity verification for predictors? | **Deferred** | `is_verified` field exists in schema. Verification process (claim profile, proof of identity) to be designed in Phase 3. |
+| 6 | Historical seeding: How far back? | **Resolved** | ~100 well-known predictions from the past 1-2 years. Focus on top 20-30 most-followed predictors. |
+| 7 | Unified predictor model? | **Resolved** | Single `predictors` table covers individuals, firms, media houses, influencers. Individuals link to parent firm via `parent_id`. Scorecards and leaderboard apply to all types equally. |
+| 8 | Authentication methods? | **Resolved** | Three login paths: Google OAuth + Email OTP + Mobile OTP (via MSG91). All in MVP. Indian retail investors expect mobile OTP. |
+| 9 | User roles and management? | **Resolved** | Four roles: visitor (unauth), user, moderator, admin. All submissions reviewed by moderators. Admin manages roles from UI. Ban/suspend capability in MVP. First admin seeded via CLI. |
+| 10 | Prediction input methods? | **Resolved** | MVP: three input paths — full user submission (URL → AI extract → form → review), suggest-a-prediction (low-effort URL+note → suggestions queue), admin bulk-import (batch URLs → AI extraction → review queue). Automated site crawling deferred to Phase 4+. |

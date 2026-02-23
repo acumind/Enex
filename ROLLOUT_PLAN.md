@@ -12,10 +12,14 @@
 | Target market | India-first (NSE/BSE) | Large retail base, active analyst ecosystem on TV/social/print |
 | Prediction types | Price targets only | Most specific, falsifiable. Clean hit/miss. No subjectivity. |
 | Scoring model | Simple hit/miss with tolerance band | Easy to understand, explain, and trust. 5% tolerance = partial hit. |
+| Predictor model | Unified `predictors` table | Any entity that publishes predictions (individual, firm, media, influencer) is a "predictor". Individuals link to parent firm. Single leaderboard for all types. |
 | AI in MVP | AI-assisted manual entry | User pastes article URL → Claude pre-fills form → user confirms |
+| Frontend | Next.js 15 (App Router) + React | SSR/SSG for SEO, file-system routing, containerized deployment |
+| Backend | FastAPI (Python 3.12+) | Best AI/data analysis ecosystem, yfinance, pandas, Anthropic SDK |
 | Architecture | Separate frontend + backend | Flexibility for independent scaling, cleaner API contract |
-| Authentication | User accounts from day 1 | Community submissions, watchlists, alerts from launch |
+| Authentication | Google OAuth + Email OTP + Mobile OTP | Three login paths from day 1. MSG91 for mobile OTP (India-optimized, DLT-compliant) |
 | Historical seeding | ~100 well-known predictions | Avoid cold-start; demonstrate value immediately |
+| Deployment | Azure Container Apps | Serverless containers, auto-scaling, single cloud provider |
 | Hosting budget | $50–100/month | Managed services, comfortable headroom |
 
 ---
@@ -30,16 +34,17 @@
            │                      │                       │
            ▼                      ▼                       ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│                     FRONTEND (React + Vite)                         │
+│                     FRONTEND (Next.js + React)                      │
 │                                                                     │
-│  Public Pages          Authenticated Pages       Admin Panel        │
-│  ─────────────         ──────────────────        ───────────        │
-│  • Leaderboard         • Submit prediction       • Review queue     │
-│  • Analyst profiles    • Watchlist/alerts         • Manage analysts  │
-│  • Stock pages         • Follow analysts         • Approve/reject   │
-│  • Search/filters      • Notification prefs      • Seed data        │
+│  Public Pages (SSR/SSG) Authenticated Pages       Admin Panel       │
+│  ──────────────────     ──────────────────        ───────────       │
+│  • Leaderboard (SSG)   • Submit prediction       • Review queue     │
+│  • Predictor profiles  • Watchlist/alerts         • Manage predictors│
+│    (SSG + ISR)         • Follow predictors       • Approve/reject   │
+│  • Stock pages (SSG)   • Notification prefs      • Seed data        │
+│  • Search/filters                                                   │
 │                                                                     │
-│  Deployed: Vercel / Cloudflare Pages                                │
+│  Deployed: Azure Container Apps                                     │
 └──────────────────────────────┬──────────────────────────────────────┘
                                │ REST API (HTTPS)
                                ▼
@@ -49,26 +54,26 @@
 │  API Layer                  Services                   Workers       │
 │  ─────────                  ────────                   ───────       │
 │  • /api/predictions         • Prediction service       • Price       │
-│  • /api/analysts            • Analyst scoring            fetcher     │
+│  • /api/predictors          • Predictor scoring          fetcher     │
 │  • /api/stocks              • Outcome evaluator        • Outcome     │
 │  • /api/auth                • AI extraction               evaluator  │
 │  • /api/admin               • Source archival           • Scorecard  │
 │  • /api/extract (AI)        • Notification service       updater    │
 │                                                                     │
-│  Deployed: Railway / Fly.io / DigitalOcean App Platform             │
+│  Deployed: Azure Container Apps                                     │
 └───────┬─────────────────┬─────────────────────┬─────────────────────┘
         │                 │                     │
         ▼                 ▼                     ▼
 ┌──────────────┐  ┌──────────────┐  ┌────────────────────┐
 │  PostgreSQL  │  │    Redis     │  │  External Services  │
 │              │  │              │  │                     │
-│  • Analysts  │  │  • Cache     │  │  • Yahoo Finance    │
+│  • Predictors│  │  • Cache     │  │  • Yahoo Finance    │
 │  • Stocks    │  │  • Job queue │  │  • Claude API       │
 │  • Predicts  │  │  • Sessions  │  │  • Web Archive API  │
 │  • Outcomes  │  │  • Rate limit│  │  • Email (Resend)   │
 │  • Users     │  │              │  │  • OAuth providers   │
 │              │  │              │  │                     │
-│  Neon / RDS  │  │  Upstash     │  └────────────────────┘
+│  Azure PG    │  │  Azure Redis │  └────────────────────┘
 └──────────────┘  └──────────────┘
 ```
 
@@ -86,12 +91,13 @@
 3. **FastAPI performance** — async, type-safe, auto-generated OpenAPI docs
 4. **Rapid development** — Pydantic models, dependency injection, middleware
 
-### Why React + Vite for Frontend
+### Why Next.js (React) for Frontend
 
-1. **Fast build times** — Vite is significantly faster than CRA/Webpack
-2. **SEO via SSG** — pre-render analyst profile pages and leaderboard for search engines (can add SSR later if needed, or use a meta-framework like TanStack Start)
+1. **SSR/SSG for SEO** — analyst profiles, stock pages, and leaderboard need search engine visibility (people will search for analyst names). Next.js App Router with ISR (Incremental Static Regeneration) delivers both performance and SEO
+2. **Built-in routing** — file-system routing, layouts, loading states, error boundaries
 3. **Rich component ecosystem** — Shadcn/ui, Recharts for analytics dashboards
 4. **TypeScript** — type-safe API consumption with generated types from OpenAPI spec
+5. **Containerizable** — Next.js `standalone` output mode produces a minimal Node.js server ideal for Docker/Azure Container Apps
 
 ---
 
@@ -100,28 +106,22 @@
 ### Core Tables
 
 ```sql
--- Analysts and firms
-CREATE TABLE firms (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name            VARCHAR(200) NOT NULL UNIQUE,
-    type            VARCHAR(50) NOT NULL,          -- 'brokerage', 'media', 'independent', 'individual'
-    website         VARCHAR(500),
-    logo_url        VARCHAR(500),
-    description     TEXT,
-    created_at      TIMESTAMPTZ DEFAULT NOW(),
-    updated_at      TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE analysts (
+-- Unified predictor model: any entity that publishes stock predictions
+-- Covers: individual analysts, brokerage research desks, media houses, influencers, etc.
+CREATE TABLE predictors (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name            VARCHAR(200) NOT NULL,
-    slug            VARCHAR(200) NOT NULL UNIQUE,  -- URL-friendly: rajat-rajgarhia
-    firm_id         UUID REFERENCES firms(id),
-    designation     VARCHAR(200),
+    slug            VARCHAR(200) NOT NULL UNIQUE,  -- URL-friendly: rajat-rajgarhia, motilal-oswal
+    type            VARCHAR(30) NOT NULL,           -- 'individual', 'brokerage', 'research_firm', 'media_house', 'influencer'
+    parent_id       UUID REFERENCES predictors(id), -- individual → firm they belong to (nullable)
+
+    -- Profile fields (used differently per type)
+    designation     VARCHAR(200),                   -- for individuals: "Head of Research", "Market Analyst"
     bio             TEXT,
-    avatar_url      VARCHAR(500),
-    social_links    JSONB DEFAULT '{}',            -- {"twitter": "...", "linkedin": "..."}
-    sebi_reg_no     VARCHAR(50),                   -- SEBI registration number if available
+    avatar_url      VARCHAR(500),                   -- photo for individuals, logo for firms/media
+    website         VARCHAR(500),                   -- firm/media homepage
+    social_links    JSONB DEFAULT '{}',             -- {"twitter": "...", "linkedin": "...", "youtube": "..."}
+    sebi_reg_no     VARCHAR(50),                    -- SEBI registration number (RA for individuals, RIA for firms)
     is_verified     BOOLEAN DEFAULT FALSE,
     created_at      TIMESTAMPTZ DEFAULT NOW(),
     updated_at      TIMESTAMPTZ DEFAULT NOW()
@@ -129,7 +129,8 @@ CREATE TABLE analysts (
 
 -- Stocks
 CREATE TABLE stocks (
-    symbol          VARCHAR(30) PRIMARY KEY,       -- e.g., 'RELIANCE', 'INFY'
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    symbol          VARCHAR(30) NOT NULL UNIQUE,   -- e.g., 'RELIANCE', 'INFY' (unique but not PK — symbols can change)
     exchange        VARCHAR(10) NOT NULL,           -- 'NSE', 'BSE'
     bse_code        VARCHAR(10),                   -- BSE scrip code
     name            VARCHAR(200) NOT NULL,
@@ -138,29 +139,80 @@ CREATE TABLE stocks (
     market_cap      BIGINT,                        -- cached, updated daily
     current_price   DECIMAL(12,2),                 -- cached, updated daily
     price_updated_at TIMESTAMPTZ,
+    is_active       BOOLEAN DEFAULT TRUE,          -- false for delisted/suspended stocks
     created_at      TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Stock daily prices (historical data for outcome evaluation)
+CREATE TABLE stock_daily_prices (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    stock_id        UUID NOT NULL REFERENCES stocks(id),
+    trade_date      DATE NOT NULL,
+    open_price      DECIMAL(12,2),
+    high_price      DECIMAL(12,2),
+    low_price       DECIMAL(12,2),
+    close_price     DECIMAL(12,2) NOT NULL,
+    volume          BIGINT,
+    adjusted_close  DECIMAL(12,2),                 -- adjusted for splits/bonuses
+    created_at      TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (stock_id, trade_date)
+);
+
+-- Users (defined before predictions due to foreign key dependency)
+CREATE TABLE users (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email           VARCHAR(320) UNIQUE,           -- nullable: user may register with phone only
+    phone           VARCHAR(15) UNIQUE,            -- E.164 format: +919876543210 (nullable: may register with email only)
+    name            VARCHAR(200),
+    avatar_url      VARCHAR(500),
+    role            VARCHAR(20) DEFAULT 'user',    -- 'user', 'moderator', 'admin'
+    auth_methods    JSONB DEFAULT '[]',            -- ['google', 'email_otp', 'phone_otp'] — tracks which methods user has used
+    oauth_provider  VARCHAR(20),                   -- 'google' (for OAuth users)
+    oauth_id        VARCHAR(200),
+    is_email_verified BOOLEAN DEFAULT FALSE,
+    is_phone_verified BOOLEAN DEFAULT FALSE,
+    is_active       BOOLEAN DEFAULT TRUE,
+    ban_reason      VARCHAR(500),                   -- admin-provided reason if banned (nullable)
+    created_at      TIMESTAMPTZ DEFAULT NOW(),
+    last_login_at   TIMESTAMPTZ,
+
+    CONSTRAINT user_has_identity CHECK (email IS NOT NULL OR phone IS NOT NULL)
+);
+
+-- OTP verification codes (shared for email + phone OTP)
+CREATE TABLE otp_codes (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    identifier      VARCHAR(320) NOT NULL,         -- email address or phone number (E.164)
+    code            VARCHAR(6) NOT NULL,           -- 6-digit OTP
+    purpose         VARCHAR(20) NOT NULL,          -- 'login', 'register', 'verify_email', 'verify_phone'
+    attempts        INT DEFAULT 0,                 -- track failed attempts (max 3)
+    expires_at      TIMESTAMPTZ NOT NULL,          -- OTP valid for 5 minutes
+    used_at         TIMESTAMPTZ,                   -- null until consumed
+    created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX idx_otp_lookup ON otp_codes(identifier, purpose, created_at DESC)
+    WHERE used_at IS NULL;
 
 -- Predictions (the heart of the system)
 CREATE TABLE predictions (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    analyst_id      UUID NOT NULL REFERENCES analysts(id),
-    stock_symbol    VARCHAR(30) NOT NULL REFERENCES stocks(symbol),
+    predictor_id    UUID NOT NULL REFERENCES predictors(id),
+    stock_id        UUID NOT NULL REFERENCES stocks(id),
 
     -- The prediction itself
     target_price    DECIMAL(12,2) NOT NULL,
     price_at_prediction DECIMAL(12,2) NOT NULL,    -- stock price when prediction was made
     upside_pct      DECIMAL(8,2) GENERATED ALWAYS AS
                         (((target_price - price_at_prediction) / price_at_prediction) * 100) STORED,
-    prediction_date DATE NOT NULL,                 -- when the analyst made the call
+    prediction_date DATE NOT NULL,                 -- when the prediction was made
     target_date     DATE,                          -- when they expect it to hit (nullable)
-    default_eval_date DATE NOT NULL,               -- fallback: prediction_date + default timeframe
+    default_eval_date DATE NOT NULL,               -- fallback: prediction_date + 12 months (default timeframe)
 
     -- Source & provenance
     source_url      VARCHAR(1000) NOT NULL,
     source_type     VARCHAR(30) NOT NULL,          -- 'article', 'tv_transcript', 'research_report', 'tweet', 'interview'
     source_archive_url VARCHAR(1000),              -- web.archive.org snapshot
-    raw_quote       TEXT,                          -- exact quote from the analyst
+    raw_quote       TEXT,                          -- exact quote from the source
 
     -- Metadata
     submitted_by    UUID REFERENCES users(id),     -- who submitted this prediction
@@ -183,9 +235,9 @@ CREATE TABLE prediction_outcomes (
     prediction_id   UUID NOT NULL UNIQUE REFERENCES predictions(id),
 
     outcome_status  VARCHAR(20) NOT NULL,          -- 'hit', 'miss', 'partial_hit', 'pending', 'expired'
-    actual_price    DECIMAL(12,2),                 -- price at evaluation date
-    highest_price   DECIMAL(12,2),                 -- highest price reached during tracking window
-    lowest_price    DECIMAL(12,2),                 -- lowest price reached during tracking window
+    actual_price    DECIMAL(12,2),                 -- closing price at evaluation date
+    highest_price   DECIMAL(12,2),                 -- highest closing price during tracking window
+    lowest_price    DECIMAL(12,2),                 -- lowest closing price during tracking window
     deviation_pct   DECIMAL(8,2),                  -- how far off the target was
 
     evaluated_at    TIMESTAMPTZ,                   -- when outcome was determined
@@ -195,9 +247,9 @@ CREATE TABLE prediction_outcomes (
     updated_at      TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Analyst scorecards (materialized/cached aggregations)
-CREATE TABLE analyst_scorecards (
-    analyst_id          UUID PRIMARY KEY REFERENCES analysts(id),
+-- Predictor scorecards (materialized/cached aggregations — works for all predictor types)
+CREATE TABLE predictor_scorecards (
+    predictor_id        UUID PRIMARY KEY REFERENCES predictors(id),
     total_predictions   INT DEFAULT 0,
     hits                INT DEFAULT 0,
     misses              INT DEFAULT 0,
@@ -214,43 +266,63 @@ CREATE TABLE analyst_scorecards (
     last_updated        TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Users
-CREATE TABLE users (
+-- Notifications
+CREATE TABLE notifications (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    email           VARCHAR(320) NOT NULL UNIQUE,
-    name            VARCHAR(200),
-    avatar_url      VARCHAR(500),
-    role            VARCHAR(20) DEFAULT 'user',    -- 'user', 'moderator', 'admin'
-    oauth_provider  VARCHAR(20),                   -- 'google', 'github'
-    oauth_id        VARCHAR(200),
-    created_at      TIMESTAMPTZ DEFAULT NOW(),
-    last_login_at   TIMESTAMPTZ
+    user_id         UUID NOT NULL REFERENCES users(id),
+    type            VARCHAR(50) NOT NULL,          -- 'prediction_outcome', 'new_prediction', 'predictor_update'
+    title           VARCHAR(300) NOT NULL,
+    message         TEXT,
+    data            JSONB DEFAULT '{}',            -- structured payload (prediction_id, predictor_id, etc.)
+    is_read         BOOLEAN DEFAULT FALSE,
+    created_at      TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- User engagement features
 CREATE TABLE user_watchlist (
-    user_id         UUID REFERENCES users(id),
-    stock_symbol    VARCHAR(30) REFERENCES stocks(symbol),
+    user_id         UUID REFERENCES users(id) ON DELETE CASCADE,
+    stock_id        UUID REFERENCES stocks(id) ON DELETE CASCADE,
     created_at      TIMESTAMPTZ DEFAULT NOW(),
-    PRIMARY KEY (user_id, stock_symbol)
+    PRIMARY KEY (user_id, stock_id)
 );
 
-CREATE TABLE user_followed_analysts (
-    user_id         UUID REFERENCES users(id),
-    analyst_id      UUID REFERENCES analysts(id),
+CREATE TABLE user_followed_predictors (
+    user_id         UUID REFERENCES users(id) ON DELETE CASCADE,
+    predictor_id    UUID REFERENCES predictors(id) ON DELETE CASCADE,
     created_at      TIMESTAMPTZ DEFAULT NOW(),
-    PRIMARY KEY (user_id, analyst_id)
+    PRIMARY KEY (user_id, predictor_id)
 );
+
+-- Prediction suggestions (low-effort input — user pastes a URL + optional note)
+CREATE TABLE prediction_suggestions (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    url             VARCHAR(1000) NOT NULL,
+    note            TEXT,                              -- optional user note: "Motilal's target for Reliance in this article"
+    submitted_by    UUID NOT NULL REFERENCES users(id),
+    status          VARCHAR(20) DEFAULT 'pending',     -- 'pending', 'promoted', 'dismissed', 'duplicate'
+    promoted_to     UUID REFERENCES predictions(id),   -- links to the prediction created from this suggestion (nullable)
+    reviewed_by     UUID REFERENCES users(id),
+    reviewed_at     TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX idx_suggestions_status ON prediction_suggestions(status, created_at DESC);
 
 -- Indexes for common queries
-CREATE INDEX idx_predictions_analyst ON predictions(analyst_id, prediction_date DESC);
-CREATE INDEX idx_predictions_stock ON predictions(stock_symbol, prediction_date DESC);
+CREATE INDEX idx_predictors_type ON predictors(type);
+CREATE INDEX idx_predictors_parent ON predictors(parent_id) WHERE parent_id IS NOT NULL;
+CREATE INDEX idx_stock_daily_prices_lookup ON stock_daily_prices(stock_id, trade_date DESC);
+CREATE INDEX idx_predictions_predictor ON predictions(predictor_id, prediction_date DESC);
+CREATE INDEX idx_predictions_stock ON predictions(stock_id, prediction_date DESC);
 CREATE INDEX idx_predictions_status ON predictions(status);
-CREATE INDEX idx_predictions_pending ON predictions(id) WHERE status = 'approved'
-    AND id NOT IN (SELECT prediction_id FROM prediction_outcomes WHERE outcome_status != 'pending');
+CREATE INDEX idx_predictions_date ON predictions(prediction_date DESC);
+CREATE INDEX idx_predictions_approved_pending ON predictions(default_eval_date)
+    WHERE status = 'approved';
+CREATE INDEX idx_outcomes_prediction ON prediction_outcomes(prediction_id);
 CREATE INDEX idx_outcomes_status ON prediction_outcomes(outcome_status);
-CREATE INDEX idx_scorecards_accuracy ON analyst_scorecards(accuracy_pct DESC)
+CREATE INDEX idx_scorecards_accuracy ON predictor_scorecards(accuracy_pct DESC)
     WHERE total_predictions >= 10;
+CREATE INDEX idx_notifications_user ON notifications(user_id, created_at DESC)
+    WHERE is_read = FALSE;
 ```
 
 ### Evaluation Logic (Pseudocode)
@@ -297,27 +369,28 @@ For each approved prediction where eval_date <= today AND no final outcome exist
 | Validation | **Pydantic v2** (built into FastAPI) | Free |
 | Task Queue | **Celery** + Redis (or **ARQ** for lightweight async) | Free |
 | AI | **Anthropic Python SDK** (Claude Sonnet for extraction) | ~$5-15/mo at MVP scale |
-| Auth | **authlib** + JWT tokens (Google OAuth + email/password) | Free |
+| Auth | **python-jose** (JWT), **NextAuth.js** (Google OAuth), **MSG91** (mobile OTP), **Resend** (email OTP) | ~₹2-5/mo at MVP scale |
 | Price Data | **yfinance** (primary) + **nsetools** (fallback) | Free |
-| Hosting | **Railway** or **Fly.io** | ~$15-25/mo |
-| Database | **Neon PostgreSQL** (Pro) or **Railway PostgreSQL** | ~$10-20/mo |
-| Cache/Queue | **Upstash Redis** (pay-per-use) | ~$5-10/mo |
+| Hosting | **Azure Container Apps** (both frontend + backend) | ~$15-30/mo (consumption plan) |
+| Database | **Azure Database for PostgreSQL** (Flexible Server, Burstable B1ms) | ~$15-25/mo |
+| Cache/Queue | **Azure Cache for Redis** (Basic C0) | ~$15-20/mo |
 
 ### Frontend
 
 | Component | Technology | Cost |
 |-----------|-----------|------|
-| Framework | **React 18** + **Vite** | Free |
-| Routing | **React Router v7** or **TanStack Router** | Free |
+| Framework | **Next.js 15** (App Router) + **React 19** | Free |
+| Routing | **Next.js file-system routing** (App Router) | Free |
 | UI Library | **Shadcn/ui** + **Tailwind CSS** | Free |
 | Charts | **Recharts** or **Tremor** | Free |
 | State | **TanStack Query** (server state) + **Zustand** (client state) | Free |
+| Auth | **NextAuth.js v5** (Google OAuth) + custom OTP login pages | Free |
 | API Client | Auto-generated from OpenAPI spec (**openapi-typescript-fetch**) | Free |
-| Hosting | **Vercel** (free tier sufficient for MVP) | $0 |
+| Hosting | **Azure Container Apps** (shared with backend infra) | Included above |
 
-### Estimated Monthly Cost: **$35–70/month**
+### Estimated Monthly Cost: **$50–90/month**
 
-(Well within the $50–100 budget, leaving room for Claude API usage spikes)
+(Within the $50–100 budget. Azure consumption-based pricing keeps idle costs low. Claude API usage adds ~$5-15/mo.)
 
 ---
 
@@ -339,13 +412,15 @@ For each approved prediction where eval_date <= today AND no final outcome exist
 2. Cache prices in the `stocks` table
 3. Use nsetools for on-demand real-time lookups when needed
 4. If yfinance fails, queue for retry with exponential backoff
-5. Store all fetched price data in a `stock_prices` historical table for outcome evaluation
+5. Store all fetched price data in the `stock_daily_prices` table for outcome evaluation
 
 ---
 
-## AI-Assisted Prediction Entry Flow
+## Prediction Input Paths
 
-This is the "AI-assisted manual entry" approach — the user drives, AI helps.
+Three ways predictions enter the system in MVP — all ultimately go through the moderator review queue.
+
+### Path 1: Full Submission (User-Driven, AI-Assisted)
 
 ```
 USER                           FRONTEND                        BACKEND
@@ -359,9 +434,10 @@ USER                           FRONTEND                        BACKEND
                                                            →   Returns structured data
 
 2. Sees pre-filled form  ←     Renders form with:         ←   Response:
-                               • Analyst: "Rajat Rajgarhia"    {analyst, firm, stock,
-                               • Firm: "Motilal Oswal"          target_price, timeframe,
-                               • Stock: INFY                    raw_quote, confidence}
+                               • Predictor: "Rajat Rajgarhia"   {predictor_name, type,
+                               • Type: Individual                parent_firm, stock,
+                               • Firm: "Motilal Oswal"           target_price, timeframe,
+                               • Stock: INFY                     raw_quote, confidence}
                                • Target: ₹2,100
                                • Timeframe: 12 months
                                • Quote: "sees Infosys..."
@@ -383,8 +459,9 @@ Indian stock markets, extract ALL stock price target predictions.
 
 For each prediction found, return:
 {
-  "analyst_name": "...",
-  "firm_name": "...",
+  "predictor_name": "...",              // whoever is making the call
+  "predictor_type": "individual|brokerage|research_firm|media_house|influencer",
+  "parent_firm_name": "...",            // if predictor is an individual at a firm (nullable)
   "stock_name": "...",
   "stock_symbol": "...",      // NSE symbol if identifiable
   "target_price": 0.00,       // in INR
@@ -401,13 +478,74 @@ Rules:
 - If timeframe is not mentioned, set to null
 - If you're unsure about the stock symbol, set confidence lower
 - Extract ALL predictions if the article mentions multiple stocks
+- Identify predictor_type: if a named individual → "individual", if attributed to a firm's research desk → "brokerage"/"research_firm", if editorial by a media outlet → "media_house"
+- If the prediction is from an individual at a firm, set both predictor_name and parent_firm_name
 ```
+
+### Path 2: Suggest a Prediction (Low-Effort User Input)
+
+For users who spot a prediction but don't want to fill out a full form.
+
+```
+USER                           FRONTEND                        BACKEND
+─────                          ────────                        ───────
+
+1. Pastes URL + optional  →    POST /api/v1/predictions/   →   Validate URL format
+   note ("Motilal's             suggest                        Save to prediction_suggestions
+   target for Reliance                                         table with status='pending'
+   in this article")
+
+2. Sees confirmation:     ←    "Thanks! Your suggestion    ←   Return suggestion ID
+   "Suggestion submitted,       has been submitted for
+    we'll review it"            review."
+
+--- LATER (moderator/admin) ---
+
+3. Moderator sees         ←    GET /api/v1/admin/          ←   List pending suggestions
+   suggestion in queue          suggestions                     with user notes
+
+4. Clicks "Promote"       →    POST /api/v1/admin/         →   Runs AI extraction on URL
+                                suggestions/:id/promote         Creates draft prediction
+                                                                in review queue
+                                                                Links suggestion.promoted_to
+
+5. Reviews extracted       →    Normal review flow          →   Approve/reject as usual
+   prediction as usual
+```
+
+**Why this matters**: Lowers the barrier to contribution. Users who browse Moneycontrol or ET Markets can quickly share interesting articles without committing to a full review of extracted fields. Builds community engagement early.
+
+### Path 3: Admin Bulk-Import (Batch URL Extraction)
+
+For admin to seed the system with 20-30 predictions per day during early days.
+
+```
+ADMIN                          FRONTEND                        BACKEND
+─────                          ────────                        ───────
+
+1. Pastes multiple URLs   →    POST /api/v1/admin/         →   Validate URLs
+   (one per line, up to         bulk-extract                    Queue each for AI extraction
+   20 at a time)                { urls: [...] }                 Return job_id
+
+2. Sees progress:         ←    Poll GET /api/v1/admin/     ←   Background worker processes
+   "12/20 extracted,            bulk-extract/:job_id            each URL sequentially
+    3 failed, 5 pending"                                        Updates job status
+
+3. Extracted predictions        Appear in normal review     →   Each extracted prediction
+   land in review queue         queue alongside user             created with status=
+                                submissions                      'pending_review' and
+                                                                 extraction_method='ai_auto'
+
+4. Admin reviews each      →    Normal approve/reject flow  →   Standard review process
+```
+
+**Why this matters**: During the cold-start phase (before community submissions ramp up), the admin can systematically scan financial news sites and bulk-import predictions. This fills the leaderboard with real data and makes the platform useful from day one.
 
 ---
 
 ## Source Archival Strategy
 
-Analysts sometimes delete or edit predictions. We need proof.
+Predictors sometimes delete or edit predictions. We need proof.
 
 1. **On prediction submission**: Automatically submit the source URL to the Wayback Machine Save API
    - `POST https://web.archive.org/save/{url}`
@@ -421,37 +559,60 @@ Analysts sometimes delete or edit predictions. We need proof.
 
 ### Public Endpoints (no auth)
 ```
-GET  /api/leaderboard                    # Top analysts by accuracy
-GET  /api/leaderboard?sector=IT          # Sector-filtered leaderboard
-GET  /api/analysts/:slug                 # Analyst profile + stats
-GET  /api/analysts/:slug/predictions     # Analyst's prediction history
-GET  /api/stocks/:symbol                 # Stock page with all predictions
-GET  /api/stocks/:symbol/predictions     # Predictions for a stock
-GET  /api/predictions/recent             # Recently added predictions
-GET  /api/search?q=term                  # Search analysts and stocks
-GET  /api/stats                          # Platform-wide stats
+GET  /api/v1/health                              # Health check
+GET  /api/v1/leaderboard                         # Top predictors by accuracy (paginated)
+GET  /api/v1/leaderboard?sector=IT               # Sector-filtered leaderboard
+GET  /api/v1/leaderboard?type=individual         # Filter by predictor type
+GET  /api/v1/leaderboard?type=media_house        # Media house leaderboard
+GET  /api/v1/predictors/:slug                    # Predictor profile + stats (any type)
+GET  /api/v1/predictors/:slug/predictions        # Predictor's prediction history (paginated)
+GET  /api/v1/predictors/:slug/members            # For firms: list individual analysts linked to this firm
+GET  /api/v1/stocks/:symbol                      # Stock page with all predictions
+GET  /api/v1/stocks/:symbol/predictions          # Predictions for a stock (paginated)
+GET  /api/v1/predictions/recent                  # Recently added predictions (paginated)
+GET  /api/v1/search?q=term                       # Search predictors and stocks
+GET  /api/v1/stats                               # Platform-wide stats
 ```
 
 ### Authenticated Endpoints (user)
 ```
-POST /api/predictions                    # Submit a new prediction
-POST /api/extract                        # AI-extract from URL (returns pre-filled data)
-GET  /api/me/watchlist                   # User's watchlist
-POST /api/me/watchlist/:symbol           # Add stock to watchlist
-DELETE /api/me/watchlist/:symbol         # Remove from watchlist
-POST /api/me/follow/:analyst_id          # Follow an analyst
-DELETE /api/me/follow/:analyst_id        # Unfollow
-GET  /api/me/notifications               # User notifications
+POST /api/v1/auth/otp/send                  # Send OTP to email or phone
+POST /api/v1/auth/otp/verify                # Verify OTP → returns JWT
+POST /api/v1/auth/google/callback           # Exchange Google OAuth code → JWT
+GET  /api/v1/auth/me                        # Current user profile
+PATCH /api/v1/auth/me                       # Update profile (add email/phone)
+POST /api/v1/predictions                    # Submit a new prediction
+POST /api/v1/predictions/suggest            # Suggest a prediction (low-effort: URL + optional note)
+GET  /api/v1/me/suggestions                 # User's own suggestions and their status
+POST /api/v1/extract                        # AI-extract from URL (returns pre-filled data)
+GET  /api/v1/me/watchlist                   # User's watchlist
+POST /api/v1/me/watchlist/:stock_id         # Add stock to watchlist
+DELETE /api/v1/me/watchlist/:stock_id       # Remove from watchlist
+POST /api/v1/me/follow/:predictor_id         # Follow a predictor (any type)
+DELETE /api/v1/me/follow/:predictor_id       # Unfollow
+GET  /api/v1/me/notifications               # User notifications (paginated)
+PATCH /api/v1/me/notifications/:id/read     # Mark notification as read
 ```
 
 ### Admin/Moderator Endpoints
 ```
-GET  /api/admin/review-queue             # Predictions pending review
-POST /api/admin/predictions/:id/approve  # Approve a prediction
-POST /api/admin/predictions/:id/reject   # Reject a prediction
-POST /api/admin/analysts                 # Create/edit analyst profiles
-POST /api/admin/stocks                   # Add stocks manually
-POST /api/admin/trigger-evaluation       # Manually trigger outcome evaluation
+GET  /api/v1/admin/review-queue             # Predictions pending review (paginated)
+POST /api/v1/admin/predictions/:id/approve  # Approve a prediction
+POST /api/v1/admin/predictions/:id/reject   # Reject a prediction
+POST /api/v1/admin/predictors               # Create/edit predictor profiles (any type)
+POST /api/v1/admin/stocks                   # Add stocks manually
+POST /api/v1/admin/trigger-evaluation       # Manually trigger outcome evaluation
+
+# Suggestion management (moderator + admin)
+GET    /api/v1/admin/suggestions              # List pending suggestions (paginated)
+POST   /api/v1/admin/suggestions/:id/promote  # Promote: run AI extraction → create draft prediction in review queue
+POST   /api/v1/admin/suggestions/:id/dismiss  # Dismiss suggestion: { reason: "..." }
+
+# Bulk import (admin only)
+POST   /api/v1/admin/bulk-extract             # Batch URL extraction: { urls: ["url1", "url2", ...] }
+                                              # Runs AI extraction on each in background
+                                              # Results land in review queue as drafts
+GET    /api/v1/admin/bulk-extract/:job_id     # Check bulk extraction job status
 ```
 
 ---
@@ -462,9 +623,9 @@ POST /api/admin/trigger-evaluation       # Manually trigger outcome evaluation
 |-----|----------|-------------|
 | **Price Fetcher** | Daily 11:00 PM IST | Fetch EOD prices for all tracked stocks |
 | **Outcome Evaluator** | Daily 11:30 PM IST | Evaluate all pending predictions against current prices |
-| **Scorecard Updater** | Daily 11:45 PM IST | Recalculate analyst scorecards after new outcomes |
+| **Scorecard Updater** | Daily 11:45 PM IST | Recalculate predictor scorecards after new outcomes |
 | **Source Archiver** | On prediction submit | Submit source URL to Wayback Machine |
-| **Notification Sender** | After evaluation | Notify users about outcomes for their watchlist/followed analysts |
+| **Notification Sender** | After evaluation | Notify users about outcomes for their watchlist/followed predictors |
 | **Stale Price Checker** | Weekly | Flag stocks with outdated prices (delisted, suspended) |
 
 ---
@@ -475,52 +636,67 @@ POST /api/admin/trigger-evaluation       # Manually trigger outcome evaluation
 
 ```
 /                              → Homepage: featured leaderboard + recent predictions
-/leaderboard                   → Full leaderboard with filters (sector, timeframe, firm)
-/analyst/:slug                 → Analyst profile: bio, stats, prediction history, accuracy chart
-/stock/:symbol                 → Stock page: all predictions, consensus target, analyst spread
+/leaderboard                   → Full leaderboard with filters (sector, timeframe, predictor type)
+/predictor/:slug               → Predictor profile: bio, stats, prediction history, accuracy chart
+                                 For firms: also shows team members (linked individuals) and firm-level roll-up
+/stock/:symbol                 → Stock page: all predictions, consensus target, predictor spread
 /predictions                   → Browse all predictions with filters
 /submit                        → Submit a prediction (auth required)
 /submit?url=...                → AI-assisted submission with pre-filled URL
-/search?q=...                  → Search results (analysts + stocks)
-/login                         → OAuth login page
-/dashboard                     → User dashboard: watchlist, followed analysts, alerts
-/admin                         → Admin panel: review queue, manage entities
+/suggest                       → Suggest a prediction (auth required) — lightweight URL + note form
+/search?q=...                  → Search results (predictors + stocks)
+/login                         → Login page: tabbed (Phone OTP / Email OTP / Google OAuth)
+/dashboard                     → User dashboard: watchlist, followed predictors, alerts
+/admin                         → Admin panel: review queue, suggestions, bulk-import, manage predictors
 /about                         → About page, methodology explanation
 ```
 
 ### Key UI Components
 
-1. **Analyst Card** — avatar, name, firm, accuracy badge, total predictions, accuracy %
-2. **Prediction Card** — stock, target, current price, analyst, date, outcome status (color-coded)
+1. **Predictor Card** — avatar/logo, name, type badge (Analyst/Firm/Media), parent firm (if individual), accuracy badge, total predictions, accuracy %
+2. **Prediction Card** — stock, target, current price, predictor (with type icon), date, outcome status (color-coded)
 3. **Accuracy Badge** — visual indicator: green (>65%), yellow (45-65%), red (<45%), gray (insufficient data)
-4. **Accuracy Trend Chart** — line chart showing analyst accuracy over time (rolling 20 predictions)
-5. **Stock Prediction Spread** — horizontal bar showing all analyst targets for a stock vs current price
-6. **Submission Form** — URL input → AI extraction → editable form → submit
+4. **Accuracy Trend Chart** — line chart showing predictor accuracy over time (rolling 20 predictions)
+5. **Stock Prediction Spread** — horizontal bar showing all predictor targets for a stock vs current price
+6. **Firm Members List** — for firm/media profiles: grid of individual analysts with their individual scorecards
+7. **Submission Form** — URL input → AI extraction → editable form → submit (predictor autocomplete supports all types)
+8. **Suggestion Form** — minimal: URL input + optional note textarea + submit. One-click contribution for users who spot predictions while browsing.
+9. **Suggestions Queue** (admin) — list of user-suggested URLs with notes, "Promote" button (triggers AI extraction), "Dismiss" button
+10. **Bulk Import Panel** (admin) — textarea for pasting multiple URLs, progress indicator, results summary with links to review queue
 
 ---
 
 ## Rollout Timeline (Revised)
 
 ### Sprint 0: Foundation (Days 1-3)
-- [ ] Project scaffolding: backend (FastAPI + Poetry) + frontend (Vite + React + TypeScript)
-- [ ] Database schema: Alembic migrations for all core tables
+- [ ] Project scaffolding: backend (FastAPI + uv) + frontend (Next.js + TypeScript)
+- [ ] Database schema: Alembic migrations for all core tables (including `stock_daily_prices`, `notifications`, and `prediction_suggestions`)
 - [ ] CI/CD pipeline: GitHub Actions for lint, test, deploy
 - [ ] Dev environment: Docker Compose (PostgreSQL + Redis)
-- [ ] Deploy skeleton apps: backend on Railway, frontend on Vercel
+- [ ] CORS middleware configuration (FastAPI ↔ Next.js frontend)
+- [ ] Environment variable management (.env files, config module)
+- [ ] Health check endpoint (`GET /api/v1/health`)
+- [ ] Deploy skeleton apps: backend + frontend on Azure Container Apps
 
 ### Sprint 1: Core Data Layer (Days 4-10)
-- [ ] CRUD APIs: analysts, firms, stocks, predictions
+- [ ] CRUD APIs: predictors (all types), stocks, predictions
+- [ ] Role-based access control: `require_role()` dependency for admin/moderator endpoints
+- [ ] Admin user management APIs: list users, change roles, ban/suspend
+- [ ] CLI command to create first admin account (`create-admin`)
 - [ ] Stock price fetcher job (yfinance + nsetools)
 - [ ] Seed initial stock data: NSE top 200 companies (symbol, name, sector)
-- [ ] Admin panel: basic CRUD for analysts, firms
+- [ ] Admin panel: basic CRUD for predictors (create individual, firm, media house, etc.)
 - [ ] Input validation and error handling
 
 ### Sprint 2: Prediction Entry & AI Assist (Days 11-17)
 - [ ] Manual prediction submission form (frontend)
 - [ ] AI extraction endpoint: URL → Claude → structured prediction data
 - [ ] Pre-filled form flow (paste URL → review → submit)
+- [ ] Suggest-a-prediction: lightweight URL + note form (frontend) + API endpoint
+- [ ] Suggestions queue in admin panel: list, promote (→ AI extract → review queue), dismiss
+- [ ] Admin bulk-import: paste multiple URLs → batch AI extraction → review queue
 - [ ] Source archival (Wayback Machine integration)
-- [ ] Duplicate detection (same analyst + stock + similar target + similar date)
+- [ ] Duplicate detection (same predictor + stock + similar target + similar date)
 - [ ] Review queue for moderators
 
 ### Sprint 3: Evaluation Engine (Days 18-24)
@@ -531,23 +707,29 @@ POST /api/admin/trigger-evaluation       # Manually trigger outcome evaluation
 - [ ] Handle edge cases: stock splits, delistings, mergers
 
 ### Sprint 4: Public Interface (Days 25-34)
-- [ ] Leaderboard page with sorting and filtering
-- [ ] Analyst profile pages (stats, prediction history, accuracy trend chart)
+- [ ] Leaderboard page with sorting, filtering by sector and predictor type
+- [ ] Predictor profile pages (stats, prediction history, accuracy trend chart) — works for all types
+- [ ] Firm/media profiles: show linked individual members with roll-up stats
 - [ ] Stock pages (all predictions, consensus view)
-- [ ] Search functionality (full-text search on analyst names, stock names)
+- [ ] Search functionality (full-text search on predictor names, stock names)
 - [ ] Responsive design (mobile-first for retail investor audience)
 - [ ] SEO: meta tags, structured data (Schema.org), SSG for key pages
 
 ### Sprint 5: User Features & Auth (Days 35-41)
-- [ ] Google OAuth integration
-- [ ] User dashboard (watchlist, followed analysts)
-- [ ] Follow/unfollow analysts
+- [ ] Email OTP login: send OTP via Resend → verify → issue JWT
+- [ ] Mobile OTP login: send OTP via MSG91 Verify API → verify → issue JWT
+- [ ] Google OAuth integration via NextAuth.js v5
+- [ ] Account linking (add email/phone to existing account, Google OAuth merges by email)
+- [ ] OTP rate limiting and brute-force protection (Redis-backed)
+- [ ] Login/register UI: tabbed interface (Phone / Email / Google)
+- [ ] User dashboard (watchlist, followed predictors)
+- [ ] Follow/unfollow predictors (any type)
 - [ ] Stock watchlist
 - [ ] Email notifications (Resend API) for prediction outcomes
 - [ ] User submission flow with moderation
 
 ### Sprint 6: Historical Seeding & Polish (Days 42-48)
-- [ ] Research and enter ~100 historical predictions from well-known analysts
+- [ ] Research and enter ~100 historical predictions from well-known predictors
 - [ ] Backfill historical price data for those predictions
 - [ ] Run evaluation engine on historical data
 - [ ] Landing page with value proposition
@@ -568,7 +750,7 @@ POST /api/admin/trigger-evaluation       # Manually trigger outcome evaluation
 - [ ] Load testing
 - [ ] Security audit (OWASP top 10)
 - [ ] Terms of service, privacy policy, disclaimer
-- [ ] Social sharing: OG images for analyst profiles and predictions
+- [ ] Social sharing: OG images for predictor profiles and predictions
 - [ ] Twitter/X bot: auto-post when notable predictions hit or miss (optional)
 
 ### --- PUBLIC BETA LAUNCH — ~Week 9 ---
@@ -577,33 +759,38 @@ POST /api/admin/trigger-evaluation       # Manually trigger outcome evaluation
 
 ## Post-MVP Roadmap (Phases 2-5)
 
-### Phase 2: Full Agentic Ingestion (Month 3-4)
+### Phase 2: Scaling Ingestion (Month 3-4)
 - RSS feed monitoring for financial news sites (Moneycontrol, ET, LiveMint, CNBC TV18)
-- Automated prediction extraction pipeline with confidence thresholds
-- Auto-approve high-confidence extractions, queue others for review
-- Social media monitoring (X/Twitter) for analyst calls
+- RSS pipeline: poll every 30 min → filter for prediction articles → AI extraction → review queue
+- Explore licensing structured data from Trendlyne, StockEdge, or similar platforms
+- All RSS/feed-extracted predictions still go through moderator review (no auto-approve)
 
 ### Phase 3: Community & Engagement (Month 4-5)
-- Analyst claim/verify profile system
-- Analyst rebuttal feature (add context to misses)
+- Predictor claim/verify profile system (for individuals, firms, and media houses)
+- Predictor rebuttal feature (add context to misses)
 - Reliability badges (displayed across the platform)
 - Push notifications (web + email digests)
-- Community leaderboard (top submitters)
+- Community leaderboard (top submitters — users who suggest/submit the most approved predictions)
 
-### Phase 4: Advanced Analytics (Month 5-7)
+### Phase 4: Advanced Analytics + Automated Crawling (Month 5-7)
 - Sector-wise accuracy breakdown
 - Bull vs bear market performance
 - Timeframe analysis (short-term vs long-term accuracy)
 - Contrarian indicator detection
-- Herding detection (multiple analysts giving similar targets)
+- Herding detection (multiple predictors giving similar targets)
 - "Would you have been better off buying Nifty 50?" comparison
-- Head-to-head analyst comparison tool
+- Head-to-head predictor comparison tool (any type vs any type)
+- **Automated site crawling** (if data volume from RSS + community is insufficient):
+  - Start with structured financial sites only (not social media)
+  - Invest in entity resolution (mapping extracted names → existing predictors)
+  - Budget for ongoing scraper maintenance
+  - Social media crawling (Twitter/X, YouTube, Telegram) only if clear ROI
 
 ### Phase 5: Monetization (Month 7+)
 - Freemium tier: detailed analytics, API access, premium alerts behind subscription
 - Public API for fintech apps
 - Institutional accuracy reports
-- Premium alerts: real-time notifications when high-accuracy analysts make new calls
+- Premium alerts: real-time notifications when high-accuracy predictors make new calls
 
 ---
 
@@ -627,7 +814,7 @@ POST /api/admin/trigger-evaluation       # Manually trigger outcome evaluation
 - Manually collect ~100 well-known predictions from the past 1-2 years
 - Focus on high-profile calls that were widely reported
 - Sources: Moneycontrol archives, ET Markets archives, CNBC TV18 show archives
-- Prioritize predictions from the top 20-30 most followed analysts/firms
+- Prioritize predictions from the top 20-30 most followed predictors (mix of individuals, brokerages, and media houses)
 
 ---
 
@@ -635,12 +822,12 @@ POST /api/admin/trigger-evaluation       # Manually trigger outcome evaluation
 
 | Risk | Mitigation |
 |------|------------|
-| **Legal pushback from analysts/firms** | Only track publicly available predictions. Link to original source. Present data factually. Allow analyst rebuttals. Add clear disclaimers. Consult a lawyer before public launch. |
+| **Legal pushback from predictors** | Only track publicly available predictions. Link to original source. Present data factually. Allow predictor rebuttals. Add clear disclaimers. Consult a lawyer before public launch. |
 | **Yahoo Finance API instability** | Dual-source strategy (yfinance + nsetools). Cache aggressively. Alert on fetch failures. Consider paid data source upgrade if free sources become unreliable. |
-| **AI extraction errors** | Human review queue for ALL AI-extracted predictions in MVP. Track extraction accuracy. Tune prompts based on error patterns. Never auto-approve without sufficient confidence. |
-| **Cold start (not enough data)** | Seed 100 historical predictions. Focus on 20-30 top analysts. Make manual submission easy. Build submission community early. |
+| **AI extraction errors** | Human review queue for ALL AI-extracted predictions in MVP. Track extraction accuracy. Tune prompts based on error patterns. Never auto-approve without sufficient confidence. AI must also correctly identify predictor type (individual vs firm vs media). |
+| **Cold start (not enough data)** | Seed 100 historical predictions. Focus on 20-30 top predictors (mix of individuals, firms, media). Make manual submission easy. Build submission community early. |
 | **Stock corporate actions** | Track splits, bonuses, mergers. Adjust historical prices accordingly. Flag predictions affected by unforeseeable corporate actions. |
-| **Analyst gaming (vague predictions)** | Only accept specific price targets. Require source URL. Community can flag vague/misleading entries. |
+| **Predictor gaming (vague predictions)** | Only accept specific price targets. Require source URL. Community can flag vague/misleading entries. |
 | **Scope creep** | Stick to NSE/BSE equities. Price targets only. No derivatives, no commodities, no macro. Expand only after MVP validates. |
 
 ---
@@ -650,7 +837,7 @@ POST /api/admin/trigger-evaluation       # Manually trigger outcome evaluation
 | Metric | Target |
 |--------|--------|
 | Tracked predictions | 200+ (100 seeded + 100 new) |
-| Analysts covered | 30+ |
+| Predictors covered | 30+ (mix of individuals, firms, media) |
 | Stocks covered | 50+ |
 | Data accuracy | >95% correct prediction-to-outcome mapping |
 | AI extraction accuracy | >80% of fields correctly pre-filled |
@@ -668,21 +855,29 @@ enex/
 │   ├── app/
 │   │   ├── api/
 │   │   │   ├── routes/
-│   │   │   │   ├── analysts.py
+│   │   │   │   ├── predictors.py        # Unified predictor routes (all types)
 │   │   │   │   ├── predictions.py
 │   │   │   │   ├── stocks.py
 │   │   │   │   ├── auth.py
 │   │   │   │   ├── admin.py
-│   │   │   │   ├── extract.py          # AI extraction endpoint
+│   │   │   │   ├── extract.py           # AI extraction endpoint
+│   │   │   │   ├── suggestions.py      # Suggest-a-prediction + admin suggestion management
 │   │   │   │   └── leaderboard.py
-│   │   │   └── dependencies.py
-│   │   ├── models/                      # SQLAlchemy models
-│   │   │   ├── analyst.py
+│   │   │   └── dependencies.py          # Auth middleware, DB session, etc.
+│   │   ├── models/                       # SQLAlchemy models
+│   │   │   ├── predictor.py             # Unified predictor model (individual, firm, media, etc.)
 │   │   │   ├── prediction.py
+│   │   │   ├── suggestion.py            # PredictionSuggestion model
 │   │   │   ├── stock.py
 │   │   │   ├── user.py
 │   │   │   └── outcome.py
-│   │   ├── services/                    # Business logic
+│   │   ├── schemas/                      # Pydantic request/response schemas
+│   │   │   ├── predictor.py
+│   │   │   ├── prediction.py
+│   │   │   ├── stock.py
+│   │   │   └── common.py                # Pagination, error responses
+│   │   ├── services/                     # Business logic
+│   │   │   ├── predictor_service.py     # Predictor CRUD, member listing for firms
 │   │   │   ├── prediction_service.py
 │   │   │   ├── evaluation_service.py
 │   │   │   ├── scoring_service.py
@@ -695,42 +890,71 @@ enex/
 │   │   │   ├── scorecard_updater.py
 │   │   │   └── notification_sender.py
 │   │   ├── core/
-│   │   │   ├── config.py
+│   │   │   ├── config.py               # Pydantic Settings (env vars)
 │   │   │   ├── database.py
-│   │   │   ├── security.py
+│   │   │   ├── security.py             # JWT creation/verification
+│   │   │   ├── otp.py                  # OTP generation, rate limiting, verification logic
+│   │   │   ├── msg91.py                # MSG91 Verify API client (mobile OTP)
+│   │   │   ├── permissions.py          # Role-based access: require_role(), get_current_user()
 │   │   │   └── redis.py
-│   │   └── main.py
+│   │   ├── cli.py                       # CLI commands (create-admin, seed-data)
+│   │   └── main.py                     # FastAPI app, CORS, router registration
 │   ├── alembic/                         # Database migrations
 │   ├── tests/
-│   ├── pyproject.toml
+│   ├── pyproject.toml                 # Managed by uv
+│   ├── uv.lock                        # uv lockfile
 │   └── Dockerfile
 │
-├── frontend/
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── ui/                      # Shadcn components
-│   │   │   ├── AnalystCard.tsx
-│   │   │   ├── PredictionCard.tsx
-│   │   │   ├── AccuracyBadge.tsx
-│   │   │   ├── LeaderboardTable.tsx
-│   │   │   └── SubmissionForm.tsx
-│   │   ├── pages/
-│   │   │   ├── Home.tsx
-│   │   │   ├── Leaderboard.tsx
-│   │   │   ├── AnalystProfile.tsx
-│   │   │   ├── StockPage.tsx
-│   │   │   ├── Submit.tsx
-│   │   │   ├── Dashboard.tsx
-│   │   │   └── Admin.tsx
-│   │   ├── hooks/                       # Custom React hooks
-│   │   ├── lib/                         # API client, utils
-│   │   ├── stores/                      # Zustand stores
-│   │   └── App.tsx
+├── frontend/                            # Next.js 15 (App Router)
+│   ├── app/
+│   │   ├── layout.tsx                   # Root layout (providers, nav, footer)
+│   │   ├── page.tsx                     # Homepage: leaderboard + recent predictions
+│   │   ├── leaderboard/
+│   │   │   └── page.tsx                 # Full leaderboard with filters (SSG + ISR)
+│   │   ├── predictor/
+│   │   │   └── [slug]/
+│   │   │       └── page.tsx             # Predictor profile — any type (SSG + ISR)
+│   │   ├── stock/
+│   │   │   └── [symbol]/
+│   │   │       └── page.tsx             # Stock page (SSG + ISR)
+│   │   ├── predictions/
+│   │   │   └── page.tsx                 # Browse predictions
+│   │   ├── submit/
+│   │   │   └── page.tsx                 # Submit prediction (auth required)
+│   │   ├── search/
+│   │   │   └── page.tsx                 # Search results
+│   │   ├── dashboard/
+│   │   │   └── page.tsx                 # User dashboard (auth required)
+│   │   ├── admin/
+│   │   │   └── page.tsx                 # Admin panel (admin role required)
+│   │   ├── login/
+│   │   │   └── page.tsx                 # Login: Phone OTP / Email OTP / Google OAuth
+│   │   ├── about/
+│   │   │   └── page.tsx                 # Methodology + about
+│   │   └── api/auth/
+│   │       └── [...nextauth]/
+│   │           └── route.ts             # NextAuth.js API route
+│   ├── components/
+│   │   ├── ui/                          # Shadcn components
+│   │   ├── PredictorCard.tsx            # Works for all types (analyst, firm, media)
+│   │   ├── PredictionCard.tsx
+│   │   ├── AccuracyBadge.tsx
+│   │   ├── PredictorTypeBadge.tsx       # Type indicator (Individual/Firm/Media/etc.)
+│   │   ├── LeaderboardTable.tsx
+│   │   ├── FirmMembersList.tsx          # Shows individuals linked to a firm
+│   │   └── SubmissionForm.tsx
+│   ├── lib/
+│   │   ├── api-client.ts                # Auto-generated from OpenAPI spec
+│   │   ├── auth.ts                      # NextAuth.js config
+│   │   └── utils.ts
+│   ├── hooks/                           # Custom React hooks
+│   ├── stores/                          # Zustand stores
 │   ├── public/
 │   ├── package.json
-│   ├── vite.config.ts
+│   ├── next.config.ts
 │   ├── tailwind.config.ts
-│   └── tsconfig.json
+│   ├── tsconfig.json
+│   └── Dockerfile                     # Next.js standalone output for container deployment
 │
 ├── docker-compose.yml                   # Local dev (Postgres + Redis)
 ├── PLAN.md                              # Product vision
@@ -763,22 +987,318 @@ volumes:
   pgdata:
 ```
 
-### Production
-- **Backend**: Railway (auto-deploy from `main` branch, includes Dockerfile support)
-- **Frontend**: Vercel (auto-deploy from `main`, environment variables for API URL)
-- **Database**: Neon PostgreSQL Pro ($19/mo — autoscaling, branching for dev)
-- **Redis**: Upstash Serverless Redis (pay-per-request, ~$5-10/mo)
-- **Monitoring**: Sentry (free tier), Railway built-in logs
+### Production (Azure)
+
+```
+Azure Resource Group: rg-enex
+├── Azure Container Apps Environment
+│   ├── enex-backend          (FastAPI container, consumption plan)
+│   └── enex-frontend         (Next.js container, consumption plan)
+├── Azure Database for PostgreSQL (Flexible Server, Burstable B1ms)
+├── Azure Cache for Redis (Basic C0)
+├── Azure Container Registry   (for Docker images)
+├── Azure Key Vault            (secrets: API keys, JWT secret, DB credentials)
+└── Azure Monitor / App Insights (logging, metrics, alerting)
+```
+
+- **Backend**: FastAPI container deployed to Azure Container Apps (auto-scaling, consumption-based)
+- **Frontend**: Next.js container deployed to Azure Container Apps (SSR requires a Node runtime)
+- **Database**: Azure Database for PostgreSQL Flexible Server (Burstable B1ms, ~$15-25/mo)
+- **Redis**: Azure Cache for Redis Basic C0 (~$15-20/mo)
+- **Container Registry**: Azure Container Registry Basic ($5/mo) for Docker images
+- **Secrets**: Azure Key Vault (free tier) for API keys, credentials, JWT secrets
+- **Monitoring**: Azure Monitor + Application Insights (free tier) + Sentry (free tier)
 - **Domain**: Purchase `enex.in` or similar (for Indian market focus)
 
 ### CI/CD (GitHub Actions)
 ```
 On push to main:
   1. Run linting (ruff for Python, eslint for TypeScript)
-  2. Run tests (pytest for backend, vitest for frontend)
-  3. Auto-deploy backend to Railway
-  4. Auto-deploy frontend to Vercel
+  2. Run tests (pytest for backend, Jest/React Testing Library for frontend)
+  3. Type check (mypy for Python, tsc --noEmit for TypeScript)
+  4. Build Docker images (backend + frontend)
+  5. Push images to Azure Container Registry
+  6. Deploy to Azure Container Apps (via az containerapp update or GitHub Actions Azure integration)
 ```
+
+---
+
+## Authentication Strategy
+
+### Three Login Paths
+
+```
+┌──────────────────────────────────────────────────────────┐
+│                    LOGIN / REGISTER                        │
+│                                                            │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐│
+│  │ Google OAuth  │  │  Email OTP   │  │   Mobile OTP     ││
+│  │              │  │              │  │                  ││
+│  │ [Continue    │  │ Enter email  │  │ Enter phone      ││
+│  │  with Google]│  │ → Get 6-digit│  │ → Get 6-digit    ││
+│  │              │  │   OTP via    │  │   OTP via SMS    ││
+│  │ NextAuth.js  │  │   Resend     │  │   (MSG91)        ││
+│  │ handles flow │  │ → Verify     │  │ → Verify         ││
+│  └──────┬───────┘  └──────┬───────┘  └──────┬───────────┘│
+│         │                 │                  │             │
+│         └─────────────────┼──────────────────┘             │
+│                           ▼                                │
+│                   Backend issues JWT                       │
+│                   User record created/updated              │
+└──────────────────────────────────────────────────────────┘
+```
+
+### Architecture
+- **Google OAuth**: NextAuth.js v5 handles the OAuth flow → on success, backend creates/upserts user and issues JWT
+- **Email OTP**: User enters email → backend generates 6-digit OTP → sent via Resend API → user enters OTP → backend verifies and issues JWT
+- **Mobile OTP**: User enters phone (+91...) → backend sends OTP via MSG91 Verify API → user enters OTP → backend verifies with MSG91 and issues JWT
+- **JWT**: All three paths result in the same JWT token. Frontend stores it and sends in `Authorization: Bearer <token>` header
+
+### Auth Endpoints
+- `POST /api/v1/auth/otp/send` — send OTP to email or phone (`{ identifier: "email@..." | "+91...", purpose: "login" }`)
+- `POST /api/v1/auth/otp/verify` — verify OTP and get JWT (`{ identifier: "...", code: "123456" }`)
+- `POST /api/v1/auth/google/callback` — exchange Google OAuth code for JWT (called by NextAuth)
+- `GET /api/v1/auth/me` — get current user profile from JWT
+- `PATCH /api/v1/auth/me` — update profile (add email/phone to existing account)
+
+### OTP Configuration
+- OTP length: 6 digits
+- OTP expiry: 5 minutes
+- Max attempts per OTP: 3 (then must request new OTP)
+- Rate limit: max 5 OTP requests per identifier per hour
+- Cooldown: 60 seconds between OTP requests to same identifier
+
+### JWT Configuration
+- Access token expiry: 24 hours (longer for mobile-friendly UX)
+- Refresh token expiry: 30 days
+- Algorithm: HS256 with a shared secret between Next.js and FastAPI
+- Token payload: `{ sub: user_id, role: "user"|"moderator"|"admin", exp: ... }`
+
+### MSG91 Integration (Mobile OTP)
+- **Service**: MSG91 Verify API (OTP as a service — handles generation, delivery, and verification)
+- **DLT compliance**: MSG91 handles DLT registration, sender ID, and template approval (required for India SMS)
+- **Cost**: ~₹0.15-0.20 per OTP SMS
+- **Fallback**: If MSG91 is down, show "Try email OTP or Google login" (no silent fallback to another SMS provider in MVP)
+
+### Account Linking
+- Users can add multiple auth methods to the same account
+- If a user registers with phone, they can later add email (and vice versa)
+- Google OAuth links by email — if a user with that email already exists, the accounts merge
+- `auth_methods` JSONB field tracks which methods the user has used: `["google", "email_otp", "phone_otp"]`
+
+---
+
+## User Management
+
+### User Roles & Permission Matrix
+
+```
+                          Visitor   User   Moderator   Admin
+                          ───────   ────   ─────────   ─────
+PUBLIC DATA
+  Browse leaderboard         ✓       ✓        ✓         ✓
+  View predictor profiles    ✓       ✓        ✓         ✓
+  View stock pages           ✓       ✓        ✓         ✓
+  Search predictors/stocks   ✓       ✓        ✓         ✓
+  View prediction details    ✓       ✓        ✓         ✓
+
+PREDICTIONS
+  Submit prediction          ✗       ✓        ✓         ✓
+  AI-extract from URL        ✗       ✓        ✓         ✓
+  Edit own submissions       ✗       ✓*       ✓         ✓
+    (* only while status = pending_review)
+
+ENGAGEMENT
+  Follow predictors          ✗       ✓        ✓         ✓
+  Watchlist stocks           ✗       ✓        ✓         ✓
+  Receive notifications      ✗       ✓        ✓         ✓
+  Manage notification prefs  ✗       ✓        ✓         ✓
+
+PROFILE
+  Edit own profile           ✗       ✓        ✓         ✓
+  Add email/phone to acct    ✗       ✓        ✓         ✓
+
+MODERATION
+  Access review queue        ✗       ✗        ✓         ✓
+  Approve predictions        ✗       ✗        ✓         ✓
+  Reject predictions         ✗       ✗        ✓         ✓
+  Edit predictor profiles    ✗       ✗        ✓         ✓
+  Edit stock metadata        ✗       ✗        ✓         ✓
+
+ADMINISTRATION
+  Create predictors/stocks   ✗       ✗        ✗         ✓
+  Delete predictors/stocks   ✗       ✗        ✗         ✓
+  Manage user roles          ✗       ✗        ✗         ✓
+  Ban/suspend users          ✗       ✗        ✗         ✓
+  Trigger evaluation jobs    ✗       ✗        ✗         ✓
+  View system stats/health   ✗       ✗        ✗         ✓
+  Seed data (bulk import)    ✗       ✗        ✗         ✓
+```
+
+### Role Hierarchy
+- `visitor` → unauthenticated (not stored in DB)
+- `user` → default role on registration
+- `moderator` → promoted by admin via admin panel
+- `admin` → promoted by existing admin (first admin seeded via DB/CLI)
+
+### Admin Panel Features
+
+| Feature | Description |
+|---------|-------------|
+| **User management** | List all users (paginated, searchable), view profile, change role (user ↔ moderator ↔ admin), ban/suspend/reactivate |
+| **Review queue** | List pending predictions, approve/reject with optional reason, bulk approve/reject |
+| **Predictor management** | Create/edit/delete predictor profiles (any type), link individuals to parent firms, upload avatars |
+| **Stock management** | Add/edit stocks, mark as delisted/suspended, trigger price refresh |
+| **Evaluation controls** | Manually trigger outcome evaluation, scorecard recomputation |
+| **System dashboard** | Total users, predictions, predictors, pending reviews, job health, recent errors |
+| **Seed data tools** | Bulk import predictors (CSV), bulk import stocks, bulk import historical predictions |
+
+### Admin API Endpoints (Extended)
+
+```
+# User management (admin only)
+GET    /api/v1/admin/users                    # List users (paginated, search by name/email/phone)
+GET    /api/v1/admin/users/:id                # View user details
+PATCH  /api/v1/admin/users/:id/role           # Change role: { role: "moderator" | "admin" | "user" }
+PATCH  /api/v1/admin/users/:id/status         # Ban/suspend: { is_active: false, reason: "..." }
+
+# Existing admin endpoints (expanded)
+GET    /api/v1/admin/review-queue             # Predictions pending review (paginated)
+POST   /api/v1/admin/predictions/:id/approve  # Approve prediction
+POST   /api/v1/admin/predictions/:id/reject   # Reject with reason: { reason: "..." }
+POST   /api/v1/admin/predictors               # Create predictor (any type)
+PUT    /api/v1/admin/predictors/:id           # Update predictor
+DELETE /api/v1/admin/predictors/:id           # Delete predictor (soft delete)
+POST   /api/v1/admin/stocks                   # Add stock
+PUT    /api/v1/admin/stocks/:id               # Update stock
+POST   /api/v1/admin/trigger-evaluation       # Manually trigger outcome evaluation
+POST   /api/v1/admin/trigger-scorecard        # Manually trigger scorecard recomputation
+GET    /api/v1/admin/stats                    # System-wide stats dashboard
+
+# Bulk operations (admin only)
+POST   /api/v1/admin/seed/predictors          # Bulk import predictors from CSV/JSON
+POST   /api/v1/admin/seed/stocks              # Bulk import stocks
+POST   /api/v1/admin/seed/predictions         # Bulk import historical predictions
+```
+
+### User Ban/Suspend Behavior
+- When `is_active` is set to `false`:
+  - User cannot log in (OTP send/verify and Google callback return 403)
+  - Existing JWT tokens are rejected by middleware (check `is_active` on every authenticated request)
+  - User's submitted predictions remain in the system (not deleted)
+  - User's follows/watchlist preserved (restored if reactivated)
+- Admin can reactivate by setting `is_active` back to `true`
+- Ban reason stored in `users.ban_reason` field (for admin reference)
+
+### Permission Enforcement
+- **Backend**: FastAPI dependency injection — `get_current_user()` extracts user from JWT, `require_role("moderator")` and `require_role("admin")` dependencies check the role field
+- **Frontend**: Route-level middleware in Next.js — redirect unauthenticated users from `/submit`, `/dashboard`, `/admin` pages. Hide admin nav links for non-admins. API calls return 401/403 which triggers redirect to login
+
+### First Admin Setup
+- The first admin account is created via a CLI command or seed script during initial deployment:
+  ```
+  python -m app.cli create-admin --email admin@enex.in --phone +91XXXXXXXXXX
+  ```
+- This creates a user with `role='admin'` directly in the database
+- All subsequent admins are promoted from the admin panel
+
+---
+
+## Implementation Considerations
+
+> These items should be addressed during implementation (Sprint 0/1) but are documented here for planning purposes.
+
+### API Versioning
+- All endpoints use `/api/v1/` prefix from day 1
+- Example: `GET /api/v1/leaderboard`, `POST /api/v1/predictions`
+- Enables non-breaking changes in future versions
+
+### CORS Configuration
+- FastAPI CORS middleware must allow the frontend origin
+- Dev: `http://localhost:3000`
+- Prod: `https://enex-frontend.<azure-region>.azurecontainerapps.io` (or custom domain)
+- Allow headers: `Authorization`, `Content-Type`
+- Allow methods: `GET`, `POST`, `PUT`, `DELETE`, `OPTIONS`
+
+### Timezone Handling
+- **Store everything in UTC** in the database (use `TIMESTAMPTZ`)
+- **Display in IST** (UTC+5:30) on the frontend
+- Background jobs use IST-aware scheduling (11 PM IST = 5:30 PM UTC)
+- Prediction dates and evaluation dates are `DATE` type (timezone-independent)
+
+### Pagination
+- All list endpoints return paginated responses
+- Standard format: `{ items: [...], total: N, page: 1, page_size: 20, pages: M }`
+- Default page size: 20, max: 100
+- Endpoints: leaderboard, predictions, predictor history, stock predictions, notifications, review queue
+
+### Standard API Error Response
+```json
+{
+  "error": {
+    "code": "PREDICTION_NOT_FOUND",
+    "message": "Prediction with ID xyz does not exist",
+    "details": {}
+  }
+}
+```
+- HTTP status codes: 400 (validation), 401 (unauthorized), 403 (forbidden), 404 (not found), 422 (unprocessable), 500 (server error)
+
+### Environment Variables
+```
+# Backend (.env) — in production, stored in Azure Key Vault and injected via Container Apps secrets
+DATABASE_URL=postgresql+asyncpg://user:pass@host:5432/enex
+REDIS_URL=rediss://host:6380/0          # Azure Redis uses SSL on port 6380
+ANTHROPIC_API_KEY=sk-ant-...
+JWT_SECRET=<shared-secret>
+CORS_ORIGINS=http://localhost:3000,https://enex-frontend.<region>.azurecontainerapps.io
+SENTRY_DSN=...
+
+# Auth providers
+MSG91_AUTH_KEY=...                       # MSG91 auth key for OTP SMS
+MSG91_TEMPLATE_ID=...                    # MSG91 OTP template (DLT approved)
+RESEND_API_KEY=re_...                    # Resend API key for email OTP
+
+# Frontend (.env.local) — in production, set as Container Apps env vars
+NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
+NEXTAUTH_SECRET=<shared-secret>
+NEXTAUTH_URL=http://localhost:3000
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+```
+
+### Health Check
+- `GET /api/v1/health` — returns `{ status: "ok", db: "connected", redis: "connected", version: "0.1.0" }`
+- Used by Azure Container Apps for liveness/readiness probes and deployment health checks
+
+### Default Evaluation Timeframe
+- When a prediction has no explicit `target_date`, use **12 months** from `prediction_date`
+- Stored in `default_eval_date = prediction_date + INTERVAL '12 months'`
+- Configurable via environment variable `DEFAULT_EVAL_MONTHS=12`
+
+### Logging & Monitoring
+- **Structured logging**: Python `structlog` for JSON-formatted logs
+- **Error tracking**: Sentry (free tier) for both backend and frontend
+- **Metrics (post-MVP)**: Track prediction volume, job success/failure rates, API latency
+- **Alerting**: Sentry alerts for error spikes; Azure Monitor alerts for resource usage and container health
+
+### Evaluation Price Clarification
+- `highest_price` and `lowest_price` in `prediction_outcomes` refer to **daily closing prices** (not intraday highs/lows)
+- This avoids data cost issues (intraday data is expensive) and is more conservative
+
+---
+
+## Deferred to Phase 3
+
+The following features are intentionally deferred from the MVP to keep scope manageable. They will be implemented in Phase 3 (Community & Engagement):
+
+| Feature | Description | Phase |
+|---------|-------------|-------|
+| **Community moderation model** | Wikipedia-style community moderation with reputation system. MVP uses admin-controlled review queue only. | Phase 3 |
+| **Predictor identity verification** | Process for any predictor (individual, firm, media) to claim and verify their profile. `is_verified` field exists in schema but verification workflow is deferred. | Phase 3 |
+| **Reliability badges** | Visual badge system (green/yellow/red) based on accuracy thresholds. Data is available via scorecards; badge UI is deferred. | Phase 3 |
+| **Predictor claim & rebuttal** | Allow any predictor to claim their profile and provide context for failed predictions. | Phase 3 |
+| **Magnitude-weighted scoring** | Weighting scores by boldness of prediction (large upside calls that hit score higher). Simple hit/miss used for MVP. | Phase 4 |
 
 ---
 
@@ -790,7 +1310,7 @@ Before public launch, ensure:
 2. **Disclaimer on every page** — "Past accuracy does not guarantee future accuracy. Do your own research."
 3. **SEBI compliance** — we are NOT providing investment advice, only tracking publicly available predictions
 4. **Data attribution** — always link to original source of the prediction
-5. **Right to respond** — allow analysts/firms to claim profiles and add context
+5. **Right to respond** — allow any predictor (individual, firm, media) to claim profiles and add context
 6. **Privacy policy** — user data handling, GDPR-style opt-outs
 7. **Legal review** — consult a lawyer familiar with Indian securities regulation before public launch
 
