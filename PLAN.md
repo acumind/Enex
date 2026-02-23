@@ -76,7 +76,7 @@ Start with a **manual + assisted** approach before going fully agentic:
 | **Cache** | Redis (Upstash) | For leaderboard caching, rate limiting, job queues |
 | **Job Scheduler** | Celery + Redis (or ARQ for lightweight async) | Daily outcome evaluation, price fetching, notifications |
 | **Auth** | NextAuth.js (frontend) + JWT verification (backend) | Google OAuth, user accounts for community submissions |
-| **Deployment** | Vercel (Next.js frontend) + Railway/Fly.io (FastAPI backend) | Cost-effective, auto-deploy from main branch |
+| **Deployment** | Azure Container Apps (both frontend + backend) | Serverless containers, auto-scaling, single cloud provider |
 
 > **Architecture note:** Frontend and backend are separate services communicating via REST API. This enables independent deployment, leverages Python's strengths for financial data processing, and keeps the API consumable by future mobile apps or third-party integrations.
 

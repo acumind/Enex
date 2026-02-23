@@ -18,6 +18,7 @@
 | Architecture | Separate frontend + backend | Flexibility for independent scaling, cleaner API contract |
 | Authentication | User accounts from day 1 | Community submissions, watchlists, alerts from launch |
 | Historical seeding | ~100 well-known predictions | Avoid cold-start; demonstrate value immediately |
+| Deployment | Azure Container Apps | Serverless containers, auto-scaling, single cloud provider |
 | Hosting budget | $50–100/month | Managed services, comfortable headroom |
 
 ---
@@ -42,7 +43,7 @@
 │  • Stock pages (SSG)   • Notification prefs      • Seed data        │
 │  • Search/filters                                                   │
 │                                                                     │
-│  Deployed: Vercel                                                   │
+│  Deployed: Azure Container Apps                                     │
 └──────────────────────────────┬──────────────────────────────────────┘
                                │ REST API (HTTPS)
                                ▼
@@ -58,7 +59,7 @@
 │  • /api/admin               • Source archival           • Scorecard  │
 │  • /api/extract (AI)        • Notification service       updater    │
 │                                                                     │
-│  Deployed: Railway / Fly.io / DigitalOcean App Platform             │
+│  Deployed: Azure Container Apps                                     │
 └───────┬─────────────────┬─────────────────────┬─────────────────────┘
         │                 │                     │
         ▼                 ▼                     ▼
@@ -71,7 +72,7 @@
 │  • Outcomes  │  │  • Rate limit│  │  • Email (Resend)   │
 │  • Users     │  │              │  │  • OAuth providers   │
 │              │  │              │  │                     │
-│  Neon / RDS  │  │  Upstash     │  └────────────────────┘
+│  Azure PG    │  │  Azure Redis │  └────────────────────┘
 └──────────────┘  └──────────────┘
 ```
 
@@ -95,7 +96,7 @@
 2. **Built-in routing** — file-system routing, layouts, loading states, error boundaries
 3. **Rich component ecosystem** — Shadcn/ui, Recharts for analytics dashboards
 4. **TypeScript** — type-safe API consumption with generated types from OpenAPI spec
-5. **Vercel integration** — zero-config deployment, preview environments per PR
+5. **Containerizable** — Next.js `standalone` output mode produces a minimal Node.js server ideal for Docker/Azure Container Apps
 
 ---
 
@@ -339,9 +340,9 @@ For each approved prediction where eval_date <= today AND no final outcome exist
 | AI | **Anthropic Python SDK** (Claude Sonnet for extraction) | ~$5-15/mo at MVP scale |
 | Auth | **python-jose** (JWT verification) — frontend handles OAuth via NextAuth.js | Free |
 | Price Data | **yfinance** (primary) + **nsetools** (fallback) | Free |
-| Hosting | **Railway** or **Fly.io** | ~$15-25/mo |
-| Database | **Neon PostgreSQL** (Pro) or **Railway PostgreSQL** | ~$10-20/mo |
-| Cache/Queue | **Upstash Redis** (pay-per-use) | ~$5-10/mo |
+| Hosting | **Azure Container Apps** (both frontend + backend) | ~$15-30/mo (consumption plan) |
+| Database | **Azure Database for PostgreSQL** (Flexible Server, Burstable B1ms) | ~$15-25/mo |
+| Cache/Queue | **Azure Cache for Redis** (Basic C0) | ~$15-20/mo |
 
 ### Frontend
 
@@ -354,11 +355,11 @@ For each approved prediction where eval_date <= today AND no final outcome exist
 | State | **TanStack Query** (server state) + **Zustand** (client state) | Free |
 | Auth | **NextAuth.js v5** (Google OAuth) | Free |
 | API Client | Auto-generated from OpenAPI spec (**openapi-typescript-fetch**) | Free |
-| Hosting | **Vercel** (free tier sufficient for MVP) | $0 |
+| Hosting | **Azure Container Apps** (shared with backend infra) | Included above |
 
-### Estimated Monthly Cost: **$35–70/month**
+### Estimated Monthly Cost: **$50–90/month**
 
-(Well within the $50–100 budget, leaving room for Claude API usage spikes)
+(Within the $50–100 budget. Azure consumption-based pricing keeps idle costs low. Claude API usage adds ~$5-15/mo.)
 
 ---
 
@@ -549,14 +550,14 @@ POST /api/v1/admin/trigger-evaluation       # Manually trigger outcome evaluatio
 ## Rollout Timeline (Revised)
 
 ### Sprint 0: Foundation (Days 1-3)
-- [ ] Project scaffolding: backend (FastAPI + Poetry) + frontend (Next.js + TypeScript)
+- [ ] Project scaffolding: backend (FastAPI + uv) + frontend (Next.js + TypeScript)
 - [ ] Database schema: Alembic migrations for all core tables (including `stock_daily_prices` and `notifications`)
 - [ ] CI/CD pipeline: GitHub Actions for lint, test, deploy
 - [ ] Dev environment: Docker Compose (PostgreSQL + Redis)
-- [ ] CORS middleware configuration (FastAPI ↔ Vercel frontend)
+- [ ] CORS middleware configuration (FastAPI ↔ Next.js frontend)
 - [ ] Environment variable management (.env files, config module)
 - [ ] Health check endpoint (`GET /api/v1/health`)
-- [ ] Deploy skeleton apps: backend on Railway, frontend on Vercel
+- [ ] Deploy skeleton apps: backend + frontend on Azure Container Apps
 
 ### Sprint 1: Core Data Layer (Days 4-10)
 - [ ] CRUD APIs: analysts, firms, stocks, predictions
@@ -757,7 +758,8 @@ enex/
 │   │   └── main.py                     # FastAPI app, CORS, router registration
 │   ├── alembic/                         # Database migrations
 │   ├── tests/
-│   ├── pyproject.toml
+│   ├── pyproject.toml                 # Managed by uv
+│   ├── uv.lock                        # uv lockfile
 │   └── Dockerfile
 │
 ├── frontend/                            # Next.js 15 (App Router)
@@ -806,7 +808,8 @@ enex/
 │   ├── package.json
 │   ├── next.config.ts
 │   ├── tailwind.config.ts
-│   └── tsconfig.json
+│   ├── tsconfig.json
+│   └── Dockerfile                     # Next.js standalone output for container deployment
 │
 ├── docker-compose.yml                   # Local dev (Postgres + Redis)
 ├── PLAN.md                              # Product vision
@@ -839,12 +842,27 @@ volumes:
   pgdata:
 ```
 
-### Production
-- **Backend**: Railway (auto-deploy from `main` branch, includes Dockerfile support)
-- **Frontend**: Vercel (auto-deploy from `main`, environment variables for API URL)
-- **Database**: Neon PostgreSQL Pro ($19/mo — autoscaling, branching for dev)
-- **Redis**: Upstash Serverless Redis (pay-per-request, ~$5-10/mo)
-- **Monitoring**: Sentry (free tier), Railway built-in logs
+### Production (Azure)
+
+```
+Azure Resource Group: rg-enex
+├── Azure Container Apps Environment
+│   ├── enex-backend          (FastAPI container, consumption plan)
+│   └── enex-frontend         (Next.js container, consumption plan)
+├── Azure Database for PostgreSQL (Flexible Server, Burstable B1ms)
+├── Azure Cache for Redis (Basic C0)
+├── Azure Container Registry   (for Docker images)
+├── Azure Key Vault            (secrets: API keys, JWT secret, DB credentials)
+└── Azure Monitor / App Insights (logging, metrics, alerting)
+```
+
+- **Backend**: FastAPI container deployed to Azure Container Apps (auto-scaling, consumption-based)
+- **Frontend**: Next.js container deployed to Azure Container Apps (SSR requires a Node runtime)
+- **Database**: Azure Database for PostgreSQL Flexible Server (Burstable B1ms, ~$15-25/mo)
+- **Redis**: Azure Cache for Redis Basic C0 (~$15-20/mo)
+- **Container Registry**: Azure Container Registry Basic ($5/mo) for Docker images
+- **Secrets**: Azure Key Vault (free tier) for API keys, credentials, JWT secrets
+- **Monitoring**: Azure Monitor + Application Insights (free tier) + Sentry (free tier)
 - **Domain**: Purchase `enex.in` or similar (for Indian market focus)
 
 ### CI/CD (GitHub Actions)
@@ -853,8 +871,9 @@ On push to main:
   1. Run linting (ruff for Python, eslint for TypeScript)
   2. Run tests (pytest for backend, Jest/React Testing Library for frontend)
   3. Type check (mypy for Python, tsc --noEmit for TypeScript)
-  4. Auto-deploy backend to Railway
-  5. Auto-deploy frontend to Vercel (auto-detected via Vercel GitHub integration)
+  4. Build Docker images (backend + frontend)
+  5. Push images to Azure Container Registry
+  6. Deploy to Azure Container Apps (via az containerapp update or GitHub Actions Azure integration)
 ```
 
 ---
@@ -890,9 +909,9 @@ On push to main:
 - Enables non-breaking changes in future versions
 
 ### CORS Configuration
-- FastAPI CORS middleware must allow the Vercel frontend origin
+- FastAPI CORS middleware must allow the frontend origin
 - Dev: `http://localhost:3000`
-- Prod: `https://enex.vercel.app` (or custom domain)
+- Prod: `https://enex-frontend.<azure-region>.azurecontainerapps.io` (or custom domain)
 - Allow headers: `Authorization`, `Content-Type`
 - Allow methods: `GET`, `POST`, `PUT`, `DELETE`, `OPTIONS`
 
@@ -922,15 +941,15 @@ On push to main:
 
 ### Environment Variables
 ```
-# Backend (.env)
+# Backend (.env) — in production, stored in Azure Key Vault and injected via Container Apps secrets
 DATABASE_URL=postgresql+asyncpg://user:pass@host:5432/enex
-REDIS_URL=redis://host:6379/0
+REDIS_URL=rediss://host:6380/0          # Azure Redis uses SSL on port 6380
 ANTHROPIC_API_KEY=sk-ant-...
 JWT_SECRET=<shared-secret>
-CORS_ORIGINS=http://localhost:3000,https://enex.vercel.app
+CORS_ORIGINS=http://localhost:3000,https://enex-frontend.<region>.azurecontainerapps.io
 SENTRY_DSN=...
 
-# Frontend (.env.local)
+# Frontend (.env.local) — in production, set as Container Apps env vars
 NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
 NEXTAUTH_SECRET=<shared-secret>
 NEXTAUTH_URL=http://localhost:3000
@@ -940,7 +959,7 @@ GOOGLE_CLIENT_SECRET=...
 
 ### Health Check
 - `GET /api/v1/health` — returns `{ status: "ok", db: "connected", redis: "connected", version: "0.1.0" }`
-- Used by Railway for deployment health checks and uptime monitoring
+- Used by Azure Container Apps for liveness/readiness probes and deployment health checks
 
 ### Default Evaluation Timeframe
 - When a prediction has no explicit `target_date`, use **12 months** from `prediction_date`
@@ -951,7 +970,7 @@ GOOGLE_CLIENT_SECRET=...
 - **Structured logging**: Python `structlog` for JSON-formatted logs
 - **Error tracking**: Sentry (free tier) for both backend and frontend
 - **Metrics (post-MVP)**: Track prediction volume, job success/failure rates, API latency
-- **Alerting**: Sentry alerts for error spikes; Railway built-in alerts for resource usage
+- **Alerting**: Sentry alerts for error spikes; Azure Monitor alerts for resource usage and container health
 
 ### Evaluation Price Clarification
 - `highest_price` and `lowest_price` in `prediction_outcomes` refer to **daily closing prices** (not intraday highs/lows)
