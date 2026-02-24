@@ -8,14 +8,19 @@
 
 ### JWT Design
 
-| Decision | Detail |
-|----------|--------|
-| **Short-lived access tokens** | 15-minute expiry — limits blast radius if a token is stolen |
-| **Refresh tokens** | 7-day expiry, stored in `httpOnly` + `Secure` + `SameSite=Strict` cookie — never in `localStorage` |
-| **Token rotation** | Every refresh issues a new refresh token and invalidates the old one (tracked in Redis) |
-| **Token revocation** | On logout, refresh token is blacklisted in Redis until its natural expiry |
-| **Algorithm** | RS256 (asymmetric) — backend signs with private key, frontend verifies with public key |
-| **Claims** | `sub` (user ID), `role`, `iat`, `exp` — no sensitive data in payload |
+> **Environment note:** Token expiry and algorithm are configurable via environment variables.
+> The values below are the defaults used for development and testing. Production values should
+> be tightened based on the app's risk tolerance and user experience requirements.
+
+| Decision | Dev / Testing default | Production (configurable) |
+|----------|-----------------------|--------------------------|
+| **Access token expiry** | 24 hours — mobile-friendly, avoids frequent re-auth during testing | Configurable via `JWT_ACCESS_TOKEN_EXPIRE_HOURS` (recommended: 1–4 hours) |
+| **Refresh token expiry** | 30 days | Configurable via `JWT_REFRESH_TOKEN_EXPIRE_DAYS` (recommended: 7–14 days) |
+| **Algorithm** | HS256 — shared secret between backend and frontend, simple to set up | Configurable via `JWT_ALGORITHM`; upgrade to RS256 (asymmetric key pair) for production if needed |
+| **Token rotation** | Every refresh issues a new refresh token and invalidates the old one (tracked in Redis) | Same |
+| **Token revocation** | On logout, refresh token is blacklisted in Redis until its natural expiry | Same |
+| **Claims** | `sub` (user ID), `role`, `iat`, `exp` — no sensitive data in payload | Same |
+| **Storage** | Access token in memory; refresh token in `httpOnly` + `Secure` + `SameSite=Strict` cookie — never in `localStorage` | Same |
 
 ### OTP Security
 
@@ -38,7 +43,7 @@
 ```
 Every incoming request:
   1. Extract Bearer token from Authorization header
-  2. Verify JWT signature using public key
+  2. Verify JWT signature using secret key (HS256 dev default) or public key (RS256 if configured)
   3. Check token expiry (exp claim)
   4. Load user from DB (or Redis session cache)
   5. Check user.is_active → reject if banned or suspended
@@ -183,7 +188,7 @@ Rule: No secret ever appears in the codebase, CI logs, or error responses.
 Additional rules:
 - **API keys are never logged** — structured logging middleware strips any field named `*key*`, `*secret*`, `*password*`, `*token*`, `*credential*`
 - **Database connection strings never appear in error responses** — caught and replaced with a generic message at the exception middleware level
-- **JWT secret is rotated** by updating Key Vault — old tokens expire naturally within their 15-minute window
+- **JWT secret is rotated** by updating Key Vault — old tokens expire naturally within their configured access token expiry window
 - **Dependency on `.env.example`** — a sanitised `.env.example` with placeholder values is committed to guide new developers; `.env` is in `.gitignore`
 
 ---
@@ -291,7 +296,7 @@ semgrep       → cross-language SAST: detects injection patterns, insecure cryp
 
 | Threat | Attack Vector | Mitigation |
 |--------|--------------|-----------|
-| **Stolen access token** | XSS, network interception | 15-min expiry limits damage window; stored in memory not localStorage |
+| **Stolen access token** | XSS, network interception | Configurable expiry (24h dev default, shorter in production); stored in memory not localStorage |
 | **Stolen refresh token** | Cookie theft | `httpOnly` + `Secure` + `SameSite=Strict`; rotation detects reuse |
 | **OTP brute force** | Automated guessing | 3-attempt lockout + rate limiting + 5-min expiry |
 | **SMS/email bombing** | Repeated OTP sends | 3 sends per identifier per 10 min; MSG91 + Resend have their own abuse controls |
