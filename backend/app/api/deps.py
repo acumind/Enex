@@ -5,9 +5,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.services.auth import AuthService
+from app.services.evaluation import EvaluationService
 from app.services.extraction import ExtractionService
 from app.services.prediction import PredictionService
 from app.services.predictor import PredictorService
+from app.services.price_fetcher import PriceFetcherService
 from app.services.stock import StockService
 from app.services.suggestion import SuggestionService
 from app.services.user import UserService
@@ -39,3 +41,11 @@ def get_extraction_service() -> ExtractionService:
 
 def get_suggestion_service(db: AsyncSession = Depends(get_db)) -> SuggestionService:
     return SuggestionService(db)
+
+
+def get_evaluation_service(db: AsyncSession = Depends(get_db)) -> EvaluationService:
+    return EvaluationService(db)
+
+
+def get_price_fetcher_service(db: AsyncSession = Depends(get_db)) -> PriceFetcherService:
+    return PriceFetcherService(db)

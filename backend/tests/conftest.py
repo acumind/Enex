@@ -2,7 +2,8 @@
 
 import uuid
 from collections.abc import AsyncGenerator
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -194,3 +195,97 @@ async def create_test_otp(
     db_session.add(otp)
     await db_session.flush()
     return otp
+
+
+async def create_test_prediction(
+    db_session: AsyncSession,
+    *,
+    predictor_id: uuid.UUID,
+    stock_id: uuid.UUID,
+    target_price: Decimal = Decimal("1500.00"),
+    price_at_prediction: Decimal = Decimal("1200.00"),
+    prediction_date: date | None = None,
+    default_eval_date: date | None = None,
+    status: str = "approved",
+    submitted_by: uuid.UUID | None = None,
+) -> "Prediction":  # type: ignore[name-defined]  # noqa: F821
+    from app.models.prediction import Prediction
+
+    pred_date = prediction_date or date(2025, 1, 15)
+    eval_date = default_eval_date or date(2026, 1, 15)
+
+    prediction = Prediction(
+        id=uuid.uuid4(),
+        predictor_id=predictor_id,
+        stock_id=stock_id,
+        target_price=target_price,
+        price_at_prediction=price_at_prediction,
+        prediction_date=pred_date,
+        default_eval_date=eval_date,
+        source_url="https://example.com/article",
+        source_type="news_article",
+        status=status,
+        submitted_by=submitted_by,
+    )
+    db_session.add(prediction)
+    await db_session.flush()
+    return prediction
+
+
+async def create_test_outcome(
+    db_session: AsyncSession,
+    *,
+    prediction_id: uuid.UUID,
+    outcome_status: str = "hit",
+    actual_price: Decimal = Decimal("1500.00"),
+    highest_price: Decimal | None = Decimal("1600.00"),
+    lowest_price: Decimal | None = Decimal("1100.00"),
+    deviation_pct: Decimal = Decimal("0.00"),
+    evaluation_date: date | None = None,
+) -> "PredictionOutcome":  # type: ignore[name-defined]  # noqa: F821
+    from app.models.prediction import PredictionOutcome
+
+    outcome = PredictionOutcome(
+        id=uuid.uuid4(),
+        prediction_id=prediction_id,
+        outcome_status=outcome_status,
+        actual_price=actual_price,
+        highest_price=highest_price,
+        lowest_price=lowest_price,
+        deviation_pct=deviation_pct,
+        evaluated_at=datetime.now(UTC).replace(tzinfo=None),
+        evaluation_date=evaluation_date or date(2026, 1, 15),
+    )
+    db_session.add(outcome)
+    await db_session.flush()
+    return outcome
+
+
+async def create_test_stock_daily_price(
+    db_session: AsyncSession,
+    *,
+    stock_id: uuid.UUID,
+    trade_date: date,
+    close_price: Decimal = Decimal("1200.00"),
+    open_price: Decimal | None = None,
+    high_price: Decimal | None = None,
+    low_price: Decimal | None = None,
+    volume: int | None = None,
+    adjusted_close: Decimal | None = None,
+) -> "StockDailyPrice":  # type: ignore[name-defined]  # noqa: F821
+    from app.models.stock import StockDailyPrice
+
+    price = StockDailyPrice(
+        id=uuid.uuid4(),
+        stock_id=stock_id,
+        trade_date=trade_date,
+        open_price=open_price,
+        high_price=high_price,
+        low_price=low_price,
+        close_price=close_price,
+        volume=volume,
+        adjusted_close=adjusted_close,
+    )
+    db_session.add(price)
+    await db_session.flush()
+    return price

@@ -42,6 +42,14 @@ class UserRole(StrEnum):
     admin = "admin"
 
 
+class OutcomeStatus(StrEnum):
+    pending = "pending"
+    hit = "hit"
+    miss = "miss"
+    partial_hit = "partial_hit"
+    expired = "expired"
+
+
 class SourceType(StrEnum):
     tv_interview = "tv_interview"
     news_article = "news_article"

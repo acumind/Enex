@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import (
+    get_evaluation_service,
     get_prediction_service,
     get_predictor_service,
     get_stock_service,
@@ -18,11 +19,13 @@ from app.core.database import get_db
 from app.core.rate_limit import bulk_extract_limiter
 from app.models.user import User
 from app.schemas.common import PaginatedResponse
+from app.schemas.outcome import EvaluationTriggerResponse
 from app.schemas.prediction import PredictionCreate, PredictionResponse
 from app.schemas.predictor import PredictorCreate, PredictorResponse, PredictorUpdate
 from app.schemas.stock import StockCreate, StockResponse
 from app.schemas.suggestion import BulkExtractRequest, BulkExtractResponse, SuggestionResponse
 from app.schemas.user import RoleChange, UserBan, UserResponse
+from app.services.evaluation import EvaluationService
 from app.services.prediction import PredictionService
 from app.services.predictor import PredictorService
 from app.services.stock import StockService
@@ -233,5 +236,19 @@ async def unban_user(
     db: AsyncSession = Depends(get_db),
 ) -> UserResponse:
     result = await service.unban_user(user_id)
+    await db.commit()
+    return result
+
+
+# --- Evaluation ---
+
+
+@router.post("/trigger-evaluation", response_model=EvaluationTriggerResponse)
+async def trigger_evaluation(
+    user: User = Depends(_admin),
+    service: EvaluationService = Depends(get_evaluation_service),
+    db: AsyncSession = Depends(get_db),
+) -> EvaluationTriggerResponse:
+    result = await service.run_full_evaluation()
     await db.commit()
     return result
