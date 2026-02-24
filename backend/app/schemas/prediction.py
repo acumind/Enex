@@ -1,0 +1,70 @@
+"""Prediction request/response schemas."""
+
+import uuid
+from datetime import date, datetime
+from decimal import Decimal
+
+from pydantic import BaseModel, Field, computed_field
+
+from app.schemas.common import PredictionStatus, SourceType
+
+
+class PredictionCreate(BaseModel):
+    predictor_id: uuid.UUID
+    stock_id: uuid.UUID
+    target_price: Decimal = Field(..., gt=0)
+    price_at_prediction: Decimal = Field(..., gt=0)
+    prediction_date: date
+    target_date: date | None = None
+    source_url: str = Field(..., min_length=1, max_length=1000)
+    source_type: SourceType
+    raw_quote: str | None = None
+
+
+class PredictionResponse(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: uuid.UUID
+    predictor_id: uuid.UUID
+    stock_id: uuid.UUID
+    target_price: Decimal
+    price_at_prediction: Decimal
+    prediction_date: date
+    target_date: date | None
+    default_eval_date: date
+    source_url: str
+    source_type: str
+    source_archive_url: str | None
+    raw_quote: str | None
+    submitted_by: uuid.UUID | None
+    extraction_method: str
+    ai_confidence: Decimal | None
+    status: str
+    reviewed_by: uuid.UUID | None
+    reviewed_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def upside_pct(self) -> Decimal:
+        if self.price_at_prediction == 0:
+            return Decimal("0")
+        return round(
+            (self.target_price - self.price_at_prediction) / self.price_at_prediction * 100,
+            2,
+        )
+
+
+class PredictionApprove(BaseModel):
+    pass
+
+
+class PredictionReject(BaseModel):
+    reason: str | None = Field(None, max_length=500)
+
+
+class ReviewQueueParams(BaseModel):
+    status: PredictionStatus = PredictionStatus.pending_review
+    cursor: datetime | None = None
+    limit: int = Field(default=20, ge=1, le=100)
