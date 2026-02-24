@@ -36,7 +36,7 @@ class OTPCode(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     identifier: Mapped[str] = mapped_column(String(320), nullable=False)
-    code: Mapped[str] = mapped_column(String(6), nullable=False)
+    code: Mapped[str] = mapped_column(String(128), nullable=False)
     purpose: Mapped[str] = mapped_column(String(20), nullable=False)
     attempts: Mapped[int] = mapped_column(Integer, server_default="0", nullable=False)
     expires_at: Mapped[datetime] = mapped_column(nullable=False)

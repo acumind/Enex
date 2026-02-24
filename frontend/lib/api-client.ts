@@ -1,20 +1,32 @@
-/** Typed fetch wrapper with JWT token injection and error handling. */
+/** Typed fetch wrapper with in-memory JWT injection, refresh-on-401, and error handling. */
 
 import type { ApiError } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
-class ApiClient {
-  private getToken(): string | null {
-    if (typeof window === "undefined") return null;
-    return localStorage.getItem("access_token");
-  }
+type TokenGetter = () => string | null;
+type TokenRefresher = () => Promise<string | null>;
 
+let _getAccessToken: TokenGetter = () => null;
+let _refreshToken: TokenRefresher = async () => null;
+
+/** Called by the AuthProvider bridge to wire up token access. */
+export function setTokenGetter(getter: TokenGetter) {
+  _getAccessToken = getter;
+}
+
+/** Called by the AuthProvider bridge to wire up token refresh. */
+export function setTokenRefresher(refresher: TokenRefresher) {
+  _refreshToken = refresher;
+}
+
+class ApiClient {
   private async request<T>(
     path: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
+    _isRetry = false,
   ): Promise<T> {
-    const token = this.getToken();
+    const token = _getAccessToken();
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
       ...(options.headers as Record<string, string>),
@@ -27,7 +39,16 @@ class ApiClient {
     const response = await fetch(`${API_BASE}${path}`, {
       ...options,
       headers,
+      credentials: "include",
     });
+
+    // Auto-refresh on 401 (once)
+    if (response.status === 401 && !_isRetry) {
+      const newToken = await _refreshToken();
+      if (newToken) {
+        return this.request<T>(path, options, true);
+      }
+    }
 
     if (!response.ok) {
       const error: ApiError = await response
@@ -73,7 +94,7 @@ class ApiClient {
 export class ApiClientError extends Error {
   constructor(
     message: string,
-    public status: number
+    public status: number,
   ) {
     super(message);
     this.name = "ApiClientError";

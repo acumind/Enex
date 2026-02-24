@@ -2,6 +2,7 @@
 
 import uuid
 from collections.abc import AsyncGenerator
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -165,3 +166,31 @@ async def create_test_suggestion(
     db_session.add(suggestion)
     await db_session.flush()
     return suggestion
+
+
+async def create_test_otp(
+    db_session: AsyncSession,
+    *,
+    identifier: str = "test@example.com",
+    code: str = "123456",
+    purpose: str = "login",
+    hashed: bool = True,
+    expires_at: datetime | None = None,
+    used_at: datetime | None = None,
+    attempts: int = 0,
+) -> "OTPCode":  # type: ignore[name-defined]  # noqa: F821
+    from app.core.security import hash_otp
+    from app.models.user import OTPCode
+
+    otp = OTPCode(
+        id=uuid.uuid4(),
+        identifier=identifier,
+        code=hash_otp(code) if hashed else code,
+        purpose=purpose,
+        expires_at=expires_at or (datetime.now(UTC) + timedelta(minutes=5)).replace(tzinfo=None),
+        used_at=used_at,
+        attempts=attempts,
+    )
+    db_session.add(otp)
+    await db_session.flush()
+    return otp

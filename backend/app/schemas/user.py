@@ -22,6 +22,23 @@ class UserResponse(BaseModel):
     last_login_at: datetime | None
 
 
+class UserDetailResponse(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: uuid.UUID
+    email: str | None
+    phone: str | None
+    name: str | None
+    avatar_url: str | None
+    role: str
+    is_email_verified: bool
+    is_phone_verified: bool
+    auth_methods: list[str]
+    is_active: bool
+    created_at: datetime
+    last_login_at: datetime | None
+
+
 class UserUpdate(BaseModel):
     name: str | None = Field(None, max_length=200)
     avatar_url: str | None = Field(None, max_length=500)

@@ -66,3 +66,7 @@ class RateLimiter:
 extract_limiter = RateLimiter("extract", max_requests=10, window_seconds=3600)
 prediction_submit_limiter = RateLimiter("prediction_submit", max_requests=20, window_seconds=86400)
 bulk_extract_limiter = RateLimiter("bulk_extract", max_requests=5, window_seconds=3600)
+
+# Auth limiters (called explicitly, not as Depends, since user isn't authenticated yet)
+otp_send_limiter = RateLimiter("otp_send", max_requests=5, window_seconds=3600)
+otp_verify_limiter = RateLimiter("otp_verify", max_requests=5, window_seconds=900)

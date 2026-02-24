@@ -64,3 +64,43 @@ export interface PaginatedResponse<T> {
 export interface ApiError {
   detail: string;
 }
+
+// --- Auth types ---
+
+export interface AuthUser {
+  id: string;
+  email: string | null;
+  phone: string | null;
+  name: string | null;
+  avatar_url: string | null;
+  role: string;
+  is_email_verified: boolean;
+  is_phone_verified: boolean;
+  auth_methods: string[];
+  is_active: boolean;
+  created_at: string;
+  last_login_at: string | null;
+}
+
+export interface OTPSendResponse {
+  message: string;
+  identifier: string;
+  expires_in_seconds: number;
+}
+
+export interface OTPVerifyResponse {
+  access_token: string;
+  token_type: string;
+  user: AuthUser;
+}
+
+export interface GoogleAuthResponse {
+  access_token: string;
+  token_type: string;
+  user: AuthUser;
+}
+
+export interface RefreshResponse {
+  access_token: string;
+  token_type: string;
+}

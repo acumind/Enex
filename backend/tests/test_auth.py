@@ -20,10 +20,13 @@ def test_create_access_token_returns_valid_jwt() -> None:
 
 def test_create_refresh_token_returns_valid_jwt() -> None:
     user_id = uuid.uuid4()
-    token = create_refresh_token(user_id)
+    token, jti = create_refresh_token(user_id, "user")
     data = verify_token(token)
     assert data.user_id == user_id
     assert data.token_type == "refresh"
+    assert data.role == "user"
+    assert data.jti == jti
+    assert jti  # non-empty
 
 
 def test_verify_token_rejects_expired_token() -> None:

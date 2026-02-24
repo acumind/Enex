@@ -262,6 +262,141 @@ frontend/
 
 ---
 
+## Sprint 3: Authentication & User Login (Completed)
+
+### Objective
+
+Add real authentication with three login paths (Email OTP, Phone OTP, Google OAuth), refresh token rotation via Redis allowlist, account linking by email, and frontend auth state management.
+
+### Tasks Completed
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 1 | Widen `otp_codes.code` column | Done | `String(6)` → `String(128)` for SHA-256 hex hashes + Alembic migration |
+| 2 | OTP Repository (`repositories/otp.py`) | Done | `get_latest_unused`, `increment_attempts`, `mark_used`, `invalidate_all`, `count_recent` |
+| 3 | Security module enhancements | Done | JTI in refresh tokens, `generate_otp`, `hash_otp`/`verify_otp_hash` (SHA-256 + HMAC constant-time), Redis refresh token allowlist (fail-closed) |
+| 4 | Auth rate limiters | Done | `otp_send_limiter` (5/hr), `otp_verify_limiter` (5/15min) — called explicitly, not as Depends |
+| 5 | Email adapter — Resend | Done | Protocol + adapter, graceful no-op when API key empty |
+| 6 | SMS adapter — MSG91 | Done | Protocol + adapter, strips `+` prefix, graceful no-op when auth key empty |
+| 7 | Google OAuth verifier | Done | `verify_id_token` (tokeninfo endpoint + audience check), `verify_access_token` (userinfo endpoint fallback) |
+| 8 | Auth schemas | Done | OTP send/verify, Google auth, refresh, logout, me update, `AuthUserResponse` |
+| 9 | Auth service | Done | Full lifecycle: `send_otp`, `verify_otp`, `google_login`, `refresh_access_token`, `logout`, account linking |
+| 10 | User schema extension | Done | `UserDetailResponse` with verification flags and auth methods |
+| 11 | Auth API routes (7 endpoints) | Done | OTP send/verify, Google, refresh (cookie), logout, GET/PATCH me |
+| 12 | DI + router wiring | Done | `get_auth_service` in deps.py, `auth_router` in main.py |
+| 13 | Fix existing tests | Done | Updated `create_refresh_token` calls for new `(user_id, role)` → `(token, jti)` return |
+| 14 | Test fixtures | Done | `create_test_otp` factory in conftest.py |
+| 15 | New backend tests (43 tests) | Done | OTP repo (7), auth service (15), auth API (10), Resend (3), MSG91 (3), Google (5) |
+| 16 | NextAuth v5 config | Done | Google provider, JWT callback captures `id_token` + `access_token` |
+| 17 | Auth context (`AuthProvider`) | Done | In-memory access token, session restore from cookie, `useAuth()` hook |
+| 18 | API client migration | Done | `setTokenGetter`/`setTokenRefresher`, auto 401→refresh→retry, `credentials: "include"` |
+| 19 | Auth types | Done | `AuthUser`, `OTPSendResponse`, `OTPVerifyResponse`, `GoogleAuthResponse`, `RefreshResponse` |
+| 20 | Providers update | Done | `SessionProvider` (NextAuth) + `AuthProvider` + `ApiClientBridge` component |
+| 21 | Middleware | Done | Redirects protected paths to `/login?callbackUrl=...` when no `refresh_token` cookie |
+| 22 | Login page | Done | Tabbed UI: Phone OTP / Email OTP / Google, 6-digit entry with countdown, Suspense boundary |
+| 23 | Profile page | Done | Name edit, verification badges, auth methods, role, logout |
+
+### Verification Results
+
+| Check | Result |
+|-------|--------|
+| `ruff check .` | All checks passed |
+| `pytest -v` | 224/224 passed (181 existing + 43 new) |
+| `alembic upgrade head` | Migration applies cleanly |
+| `npm run lint` | Clean (0 errors, 0 warnings) |
+| `npx tsc --noEmit` | Clean |
+| `npm run build` | Success (15 pages) |
+| Swagger UI (`/docs`) | Shows 7 new auth endpoints |
+
+### API Endpoints Added (Sprint 3)
+
+| Method | Path | Auth | Rate Limit | Description |
+|--------|------|------|------------|-------------|
+| `POST` | `/api/v1/auth/otp/send` | None | 5/hr per identifier | Send OTP via email or SMS |
+| `POST` | `/api/v1/auth/otp/verify` | None | 5/15min per identifier | Verify OTP, return access token, set refresh cookie |
+| `POST` | `/api/v1/auth/google` | None | — | Verify Google token, return access token, set refresh cookie |
+| `POST` | `/api/v1/auth/refresh` | Cookie | — | Read refresh cookie, rotate, return new access token |
+| `POST` | `/api/v1/auth/logout` | Bearer | — | Revoke all refresh tokens, clear cookie |
+| `GET` | `/api/v1/auth/me` | Bearer | — | Get current user profile |
+| `PATCH` | `/api/v1/auth/me` | Bearer | — | Update name/avatar |
+
+### Files Created
+
+```
+backend/
+  app/repositories/otp.py
+  app/services/auth.py
+  app/schemas/auth.py
+  app/api/routes/auth.py
+  app/integrations/email/__init__.py, protocol.py, resend_adapter.py
+  app/integrations/sms/__init__.py, protocol.py, msg91_adapter.py
+  app/integrations/oauth/__init__.py, google_verifier.py
+  migrations/versions/5c3a9111b753_widen_otp_code_for_sha256.py
+  tests/test_repositories/test_otp_repo.py
+  tests/test_services/test_auth_service.py
+  tests/test_api/test_auth_api.py
+  tests/test_integrations/test_resend_adapter.py,
+                          test_msg91_adapter.py, test_google_verifier.py
+frontend/
+  lib/auth.ts, lib/auth-context.tsx
+  middleware.ts
+  app/api/auth/[...nextauth]/route.ts
+  app/(user)/profile/page.tsx
+```
+
+### Files Modified
+
+```
+backend/
+  app/models/user.py — OTPCode.code column String(6) → String(128)
+  app/core/security.py — JTI, OTP hashing, Redis refresh token helpers
+  app/core/rate_limit.py — otp_send_limiter, otp_verify_limiter
+  app/schemas/user.py — added UserDetailResponse
+  app/api/deps.py — added get_auth_service
+  app/main.py — registered auth_router
+  tests/test_auth.py — updated create_refresh_token calls
+  tests/conftest.py — added create_test_otp fixture
+frontend/
+  lib/api-client.ts — in-memory token, setTokenGetter/setTokenRefresher, 401 retry
+  lib/types.ts — auth types (AuthUser, OTP/Google responses)
+  components/providers.tsx — SessionProvider + AuthProvider + ApiClientBridge
+  app/(auth)/login/page.tsx — full tabbed login UI (replaced stub)
+```
+
+---
+
+## Observations & Decisions Made During Sprint 3
+
+### 1. SHA-256 for OTP hashing (not bcrypt)
+
+OTPs are short-lived (5 min) and rate-limited (5 attempts). SHA-256 is sufficient and avoids the ~250ms bcrypt overhead on each verification. Constant-time comparison via `hmac.compare_digest` prevents timing attacks.
+
+### 2. Refresh token allowlist in Redis (fail-closed)
+
+Unlike rate limiting (fail-open), the refresh token allowlist is **fail-closed** — if Redis is unavailable, refresh requests are denied. This prevents unauthorized token reuse if the revocation list is unavailable.
+
+### 3. Access token in memory, refresh token in httpOnly cookie
+
+Access tokens are held in React state (memory) and never stored in localStorage. Refresh tokens are set as `httpOnly`, `secure`, `samesite=strict` cookies scoped to `/api/v1/auth`. This prevents XSS from stealing either token type.
+
+### 4. Account linking by email (auto-merge)
+
+When a user logs in via Google OAuth and their email matches an existing OTP user, the accounts are automatically linked. The `auth_methods` array tracks all methods the user has used (e.g., `["email", "google"]`).
+
+### 5. Timezone-naive datetimes in PostgreSQL
+
+The OTP `expires_at` and `created_at` columns use `TIMESTAMP WITHOUT TIME ZONE`. All Python datetime values must have `tzinfo=None` before being sent to asyncpg. The pattern `datetime.now(UTC).replace(tzinfo=None)` is used consistently.
+
+### 6. NextAuth v5 used only for Google OAuth redirect
+
+NextAuth handles only the Google OAuth redirect flow. All JWT issuance and session management is done by the backend. The NextAuth session callback exposes the Google `id_token` to the client, which then exchanges it with the backend's `/auth/google` endpoint.
+
+### 7. Next.js 16 middleware deprecation warning
+
+Next.js 16 shows a deprecation warning for `middleware.ts` in favor of the new `proxy` convention. The middleware still works correctly. Migration to `proxy` can be done in a future sprint.
+
+---
+
 ## Observations & Decisions Made During Sprint 2
 
 ### 1. Lazy imports for Celery tasks and heavy dependencies
@@ -545,5 +680,6 @@ app/
 | Load testing | Post-MVP | Open | Use `locust` or `k6` before public launch |
 | `nsetools` as yfinance fallback | 4 | Open | Not yet installed — add when price fetcher is implemented |
 | Pre-commit config | Next sprint | Open | `pre-commit` hook is installed but no `.pre-commit-config.yaml` exists — commits require `PRE_COMMIT_ALLOW_NO_CONFIG=1` |
-| Frontend auth middleware | 3 | Open | `(user)` and `(admin)` route groups have no protection yet — needs NextAuth.js middleware |
+| ~~Frontend auth middleware~~ | ~~3~~ | **Done** | Middleware.ts redirects protected paths to login when no refresh_token cookie |
 | Celery worker deployment | 3+ | Open | Worker uses same image with different entrypoint — Docker Compose service not yet added |
+| Next.js middleware → proxy migration | 5+ | Open | Next.js 16 deprecates `middleware.ts` in favor of `proxy` convention |
