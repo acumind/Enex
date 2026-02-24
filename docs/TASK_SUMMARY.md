@@ -2,7 +2,7 @@
 
 > Living document tracking sprint-wise completion, observations, and guidance for future implementation.
 >
-> Last updated: 2026-02-25
+> Last updated: 2026-02-26
 
 ---
 
@@ -365,6 +365,113 @@ frontend/
 
 ---
 
+## Sprint 4: Evaluation Engine (Completed)
+
+### Objective
+
+Build the core evaluation pipeline: fetch daily stock prices via yfinance, compare approved predictions against actual prices to compute hit/miss/partial_hit outcomes, materialize predictor scorecards, and expose public leaderboard and scorecard APIs.
+
+### Tasks Completed
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 1 | OutcomeStatus enum + response schemas | Done | `OutcomeStatus(StrEnum)`, `PredictionOutcomeResponse`, `ScorecardResponse`, `LeaderboardEntry`, `EvaluationTriggerResponse` |
+| 2 | Price data integration (Protocol + yfinance adapter) | Done | `PriceDataProtocol`, `DailyPrice` model, `YFinanceAdapter` with `.NS` suffix handling, `asyncio.to_thread` wrapping |
+| 3 | StockDailyPriceRepository | Done | `bulk_upsert` (ON CONFLICT DO UPDATE), `get_price_on_date` (nearest prior trading day), `get_high_low_in_range`, `get_latest_date_per_stock` |
+| 4 | OutcomeRepository | Done | `find_ready_for_evaluation` (approved + eval_date passed + no outcome), `count_by_status_for_predictor`, `list_by_predictor/stock` |
+| 5 | ScorecardRepository | Done | `upsert` (ON CONFLICT DO UPDATE on predictor_id PK), `get_leaderboard` (JOIN Predictor, min_predictions filter, accuracy DESC) |
+| 6 | PriceFetcherService | Done | Incremental fetch (2yr lookback for new stocks), `update_current_prices` batch via `yf.Tickers` |
+| 7 | EvaluationService (core business logic) | Done | Bullish/bearish hit/partial/miss with 5% tolerance, deviation_pct, sector accuracy, streak computation, full pipeline orchestration |
+| 8 | Celery jobs + beat schedule | Done | `fetch_daily_prices_task` (23:00), `evaluate_predictions_task` (23:30), `update_scorecards_task` (23:45) IST |
+| 9 | API routes + DI wiring | Done | 3 public endpoints + 1 admin endpoint, outcomes router registered |
+| 10 | Tests (71 new) | Done | Integration (yfinance), repos (3), services (evaluation), jobs (3), API (outcomes) + conftest factories |
+
+### Verification Results
+
+| Check | Result |
+|-------|--------|
+| `ruff check .` | All checks passed |
+| `pytest -v` | 295/295 passed (224 existing + 71 new) |
+| Backend app loads | All endpoints registered, Swagger docs updated |
+
+### API Endpoints Added (Sprint 4)
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/api/v1/outcomes/{prediction_id}` | None | Get prediction outcome (hit/miss/partial) |
+| `GET` | `/api/v1/leaderboard` | None | Leaderboard with offset pagination, min_predictions filter |
+| `GET` | `/api/v1/scorecards/{predictor_id}` | None | Get predictor scorecard |
+| `POST` | `/api/v1/admin/trigger-evaluation` | Admin | Run full evaluation pipeline synchronously |
+
+### Files Created
+
+```
+backend/
+  app/schemas/outcome.py
+  app/integrations/price_data/__init__.py, protocol.py, yfinance_adapter.py
+  app/repositories/stock_daily_price.py, outcome.py, scorecard.py
+  app/services/price_fetcher.py, evaluation.py
+  app/jobs/price_fetcher.py, evaluation.py, scorecard.py
+  app/api/routes/outcomes.py
+  tests/test_integrations/test_yfinance_adapter.py
+  tests/test_repositories/test_stock_daily_price_repo.py,
+                          test_outcome_repo.py, test_scorecard_repo.py
+  tests/test_services/test_evaluation_service.py
+  tests/test_jobs/test_price_fetcher_job.py, test_evaluation_job.py,
+                  test_scorecard_job.py
+  tests/test_api/test_outcomes_api.py
+```
+
+### Files Modified
+
+```
+backend/
+  app/schemas/common.py — added OutcomeStatus enum
+  app/jobs/celery_app.py — added crontab import and beat_schedule (3 scheduled tasks)
+  app/api/deps.py — added get_evaluation_service, get_price_fetcher_service
+  app/api/routes/admin.py — added POST /admin/trigger-evaluation endpoint
+  app/main.py — registered outcomes_router
+  tests/conftest.py — added create_test_prediction, create_test_outcome, create_test_stock_daily_price factories
+```
+
+---
+
+## Observations & Decisions Made During Sprint 4
+
+### 1. Bullish vs bearish evaluation logic
+
+Direction is inferred from the prediction itself: if `target_price > price_at_prediction`, it's bullish; otherwise bearish. Bullish predictions check if the **highest** price in the window reached the target. Bearish predictions check if the **lowest** price reached the target. This avoids needing a separate "direction" field.
+
+### 2. Partial hit uses configurable tolerance (default 5%)
+
+A prediction that comes within 5% of the target counts as `partial_hit` (scored as 0.5 in accuracy calculations). The tolerance is config-driven via `OUTCOME_TOLERANCE_PCT` in settings, making it easy to tune without code changes.
+
+### 3. Adjusted close preferred over close price
+
+`get_high_low_in_range` uses `COALESCE(adjusted_close, close_price)` to prefer split-adjusted prices. This prevents stock splits from causing false hits/misses. The yfinance adapter fetches with `auto_adjust=False` to get both raw and adjusted values.
+
+### 4. Nearest trading day for weekend/holiday evaluation
+
+`get_price_on_date` uses `WHERE trade_date <= target_date ORDER BY trade_date DESC LIMIT 1` to handle weekends and market holidays. If a prediction's eval date falls on a Saturday, the Friday closing price is used.
+
+### 5. Incremental price fetching with 2-year lookback
+
+`PriceFetcherService.fetch_all_active_stocks()` checks `get_latest_date_per_stock` and only fetches data from the last stored date forward. For stocks with no price history, it starts with a 2-year lookback to provide enough data for evaluation.
+
+### 6. Scorecard accuracy formula
+
+`accuracy_pct = (hits + partial_hits * 0.5) / total_evaluated * 100`. Partial hits count as half a correct prediction. Pending predictions are tracked separately and don't affect accuracy calculations.
+
+### 7. Streak computation
+
+Positive streak counts consecutive hits from the most recent outcome backward. Negative streak counts consecutive misses. A `partial_hit` breaks any streak. Streak = 0 when the most recent outcome is `partial_hit` or there are no outcomes.
+
+### 8. Celery beat schedule in IST
+
+All three scheduled tasks run after market hours: price fetch at 23:00, evaluation at 23:30, scorecards at 23:45 IST. The Celery app timezone is already configured as `Asia/Kolkata`. Tasks have `max_retries=1` with staggered retry countdowns (300s for price/eval, 60s for scorecards).
+
+---
+
 ## Observations & Decisions Made During Sprint 3
 
 ### 1. SHA-256 for OTP hashing (not bcrypt)
@@ -583,24 +690,6 @@ npx shadcn@latest add card      # adds Card component
 - Rate limit OTP requests: 5/hour per identifier (already have the Redis infrastructure from Sprint 2)
 - `user_has_identity` CHECK constraint requires at least email or phone — enforce at the API layer too
 
-### Sprint 4: Evaluation Engine
-
-**Scope:** Daily job that compares predictions to actual prices and computes outcomes + scorecard materialization.
-
-**Key implementation points:**
-- Price data adapter: `yfinance` integration to download daily OHLCV data for tracked stocks
-- Store in `stock_daily_prices` table (stock_id + trade_date unique)
-- Evaluation job: daily Celery beat task, finds approved predictions past `default_eval_date`, computes hit/miss/partial_hit
-- Tolerance band: exact hit if actual price >= target, partial_hit if within 5%, miss otherwise
-- Scorecard computation job: aggregate stats per predictor → `predictor_scorecards` table
-- Price fetcher job using `yfinance` to keep `stocks.current_price` up to date
-
-**Watch out for:**
-- Stock splits/bonuses affect price comparison — use `adjusted_close` from `stock_daily_prices`
-- `yfinance` uses `.NS` suffix for NSE stocks (e.g., `RELIANCE.NS`) — handle this in the price data adapter
-- Weekend/holiday handling: if `eval_date` falls on a non-trading day, use the nearest prior trading day
-- Celery beat setup: configure periodic task schedule in `celery_app.py`
-
 ### Sprint 5: Public Interface & SEO
 
 **Scope:** SSG/ISR pages for leaderboard, predictor profiles, stock pages, search + responsive design.
@@ -678,8 +767,8 @@ app/
 | Database user separation | Production | Open | Use `enex_app` (DML only) for runtime, `enex_migrations` (DDL) for Alembic |
 | Content Security Policy headers | 5+ | Open | Add via FastAPI middleware per SECURITY.md |
 | Load testing | Post-MVP | Open | Use `locust` or `k6` before public launch |
-| `nsetools` as yfinance fallback | 4 | Open | Not yet installed — add when price fetcher is implemented |
-| Pre-commit config | Next sprint | Open | `pre-commit` hook is installed but no `.pre-commit-config.yaml` exists — commits require `PRE_COMMIT_ALLOW_NO_CONFIG=1` |
+| ~~`nsetools` as yfinance fallback~~ | ~~4~~ | **Deferred** | yfinance adapter implemented with `.NS` suffix handling; `nsetools` can be added as a fallback later if needed |
+| ~~Pre-commit config~~ | ~~Next sprint~~ | **Done** | `.pre-commit-config.yaml` exists with local ruff hooks |
 | ~~Frontend auth middleware~~ | ~~3~~ | **Done** | Middleware.ts redirects protected paths to login when no refresh_token cookie |
 | Celery worker deployment | 3+ | Open | Worker uses same image with different entrypoint — Docker Compose service not yet added |
 | Next.js middleware → proxy migration | 5+ | Open | Next.js 16 deprecates `middleware.ts` in favor of `proxy` convention |
