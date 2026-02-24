@@ -12,7 +12,7 @@ Analyst Prediction Tracker for Indian equity markets. Tracks stock price target 
 
 ## Tech stack
 - **Backend**: FastAPI · Python 3.12 · SQLAlchemy 2.0 · Alembic · Pydantic v2 · Celery · Redis
-- **Frontend**: Next.js 15 (App Router) · React 19 · Shadcn/ui · TanStack Query · Zustand · NextAuth.js v5
+- **Frontend**: Next.js 16 (App Router) · React 19 · Shadcn/ui · TanStack Query · Zustand · NextAuth.js v5
 - **Database**: PostgreSQL 16
 - **AI**: Anthropic Claude API (prediction extraction)
 - **Deployment**: Azure Container Apps
@@ -32,14 +32,24 @@ Analyst Prediction Tracker for Indian equity markets. Tracks stock price target 
 - Unified `predictors` table for all types (individual, brokerage, research_firm, media_house, influencer)
 
 ## Current status
-- All planning docs complete and reviewed
-- README, .env.example files, and .gitignore created
-- **Next step: Sprint 0 — Project scaffolding**
-  - Backend: FastAPI + uv + Alembic + project structure
-  - Frontend: Next.js + TypeScript + Shadcn/ui setup
-  - Docker Compose for local dev (PostgreSQL + Redis)
-  - Health check endpoint
-  - CI pipeline stub
+- **Sprint 0 complete** — full project scaffolding deployed
+  - Backend: FastAPI + uv + Alembic + 12 ORM models + health endpoint + tests
+  - Frontend: Next.js 16 + Shadcn/ui + route stubs
+  - Docker Compose (PostgreSQL 16 + Redis 7)
+  - CI pipeline (GitHub Actions) + deploy workflow stubs
+  - Dockerfiles (multi-stage, non-root) for both services
+  - See `docs/TASK_SUMMARY.md` for detailed sprint log
+- **Next step: Sprint 1 — Core Data Layer**
+  - CRUD APIs for predictors, stocks, predictions
+  - Role-based access control (admin/moderator guards)
+  - Admin user management + create-admin CLI
+  - Stock seeding (NSE top 200)
+  - Repository + Service layer implementation
+
+## Development workflow
+- Work on feature branches, PR into `main`
+- Pre-commit hooks run ruff, mypy, trailing-whitespace checks
+- CI runs on pull requests: backend (lint + type + migrate + test) + frontend (lint + type) + Docker build
 
 ## Git
 - Main branch: `main`
