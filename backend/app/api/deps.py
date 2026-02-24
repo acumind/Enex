@@ -4,9 +4,11 @@ from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.services.extraction import ExtractionService
 from app.services.prediction import PredictionService
 from app.services.predictor import PredictorService
 from app.services.stock import StockService
+from app.services.suggestion import SuggestionService
 from app.services.user import UserService
 
 
@@ -24,3 +26,11 @@ def get_stock_service(db: AsyncSession = Depends(get_db)) -> StockService:
 
 def get_prediction_service(db: AsyncSession = Depends(get_db)) -> PredictionService:
     return PredictionService(db)
+
+
+def get_extraction_service() -> ExtractionService:
+    return ExtractionService()
+
+
+def get_suggestion_service(db: AsyncSession = Depends(get_db)) -> SuggestionService:
+    return SuggestionService(db)

@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes.admin import router as admin_router
+from app.api.routes.extract import router as extract_router
 from app.api.routes.health import router as health_router
 from app.api.routes.predictions import router as predictions_router
 from app.api.routes.predictors import router as predictors_router
@@ -41,4 +42,5 @@ app.include_router(health_router, prefix="/api/v1")
 app.include_router(predictors_router, prefix="/api/v1")
 app.include_router(stocks_router, prefix="/api/v1")
 app.include_router(predictions_router, prefix="/api/v1")
+app.include_router(extract_router, prefix="/api/v1")
 app.include_router(admin_router, prefix="/api/v1")

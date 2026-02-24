@@ -19,6 +19,7 @@ dependencies = [
     "anthropic>=0.39.0",
     "yfinance>=0.2.48",
     "sentry-sdk[fastapi]>=2.18.0",
+    "beautifulsoup4>=4.12.0",
 ]
 
 [dependency-groups]
@@ -56,6 +57,7 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "app/api/**" = ["B008"]  # FastAPI Depends() in function defaults is idiomatic
 "app/core/auth.py" = ["B008"]  # Same: FastAPI dependency injection pattern
+"app/core/rate_limit.py" = ["B008"]  # Same: FastAPI dependency injection pattern
 
 [tool.mypy]
 python_version = "3.12"

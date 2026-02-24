@@ -139,3 +139,28 @@ async def create_test_stock(
     db_session.add(stock)
     await db_session.flush()
     return stock
+
+
+async def create_test_suggestion(
+    db_session: AsyncSession,
+    *,
+    user_id: uuid.UUID | None = None,
+    url: str = "https://example.com/suggestion",
+    note: str | None = "Check this prediction",
+) -> "PredictionSuggestion":  # type: ignore[name-defined]  # noqa: F821
+    from app.models.prediction import PredictionSuggestion
+
+    if user_id is None:
+        user = await create_test_user(db_session)
+        user_id = user.id
+
+    suggestion = PredictionSuggestion(
+        id=uuid.uuid4(),
+        url=url,
+        note=note,
+        submitted_by=user_id,
+        status="pending",
+    )
+    db_session.add(suggestion)
+    await db_session.flush()
+    return suggestion

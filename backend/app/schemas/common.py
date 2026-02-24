@@ -21,6 +21,19 @@ class PredictionStatus(StrEnum):
     pending_review = "pending_review"
     approved = "approved"
     rejected = "rejected"
+    duplicate = "duplicate"
+
+
+class SuggestionStatus(StrEnum):
+    pending = "pending"
+    promoted = "promoted"
+    dismissed = "dismissed"
+
+
+class ExtractionMethod(StrEnum):
+    manual = "manual"
+    ai_assisted = "ai_assisted"
+    ai_auto = "ai_auto"
 
 
 class UserRole(StrEnum):

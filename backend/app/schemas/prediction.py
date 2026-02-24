@@ -6,7 +6,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, Field, computed_field
 
-from app.schemas.common import PredictionStatus, SourceType
+from app.schemas.common import ExtractionMethod, PredictionStatus, SourceType
 
 
 class PredictionCreate(BaseModel):
@@ -19,6 +19,8 @@ class PredictionCreate(BaseModel):
     source_url: str = Field(..., min_length=1, max_length=1000)
     source_type: SourceType
     raw_quote: str | None = None
+    extraction_method: ExtractionMethod = ExtractionMethod.manual
+    ai_confidence: Decimal | None = None
 
 
 class PredictionResponse(BaseModel):

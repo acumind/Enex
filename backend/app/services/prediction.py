@@ -1,18 +1,21 @@
 """Prediction business logic: creation, review queue, approve/reject."""
 
 import calendar
+import logging
 import uuid
 from datetime import date, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import BusinessRuleViolation, NotFoundError
+from app.core.exceptions import BusinessRuleViolation, ConflictError, NotFoundError
 from app.models.prediction import Prediction
 from app.repositories.prediction import PredictionRepository
 from app.repositories.predictor import PredictorRepository
 from app.repositories.stock import StockRepository
 from app.schemas.common import PaginatedResponse
 from app.schemas.prediction import PredictionCreate, PredictionResponse
+
+logger = logging.getLogger(__name__)
 
 
 def _add_months(d: date, months: int) -> date:
@@ -48,6 +51,13 @@ class PredictionService:
         if stock is None:
             raise NotFoundError("Stock not found")
 
+        # Duplicate detection
+        duplicate = await self.pred_repo.find_duplicate(
+            data.predictor_id, data.stock_id, data.target_price, data.prediction_date,
+        )
+        if duplicate is not None:
+            raise ConflictError("A similar prediction already exists for this predictor, stock, and target price")
+
         default_eval_date = _compute_default_eval_date(data.prediction_date, data.target_date)
 
         prediction = Prediction(
@@ -62,9 +72,20 @@ class PredictionService:
             source_type=data.source_type,
             raw_quote=data.raw_quote,
             submitted_by=submitted_by,
+            extraction_method=data.extraction_method,
+            ai_confidence=data.ai_confidence,
             status="pending_review",
         )
         prediction = await self.pred_repo.create(prediction)
+
+        # Dispatch background archival
+        try:
+            from app.jobs.archive import archive_url_task
+
+            archive_url_task.delay(str(prediction.id), data.source_url)
+        except Exception:
+            logger.warning("Failed to dispatch archive task for prediction %s", prediction.id)
+
         return PredictionResponse.model_validate(prediction)
 
     async def approve(self, prediction_id: uuid.UUID, reviewer_id: uuid.UUID) -> PredictionResponse:
@@ -142,6 +163,22 @@ class PredictionService:
         limit: int = 20,
     ) -> PaginatedResponse[PredictionResponse]:
         predictions = await self.pred_repo.list_by_stock(stock_id, cursor=cursor, limit=limit + 1)
+        has_more = len(predictions) > limit
+        if has_more:
+            predictions = predictions[:limit]
+
+        items = [PredictionResponse.model_validate(p) for p in predictions]
+        next_cursor = items[-1].created_at if has_more and items else None
+        return PaginatedResponse[PredictionResponse](items=items, next_cursor=next_cursor, has_more=has_more)
+
+    async def list_by_user(
+        self,
+        user_id: uuid.UUID,
+        *,
+        cursor: datetime | None = None,
+        limit: int = 20,
+    ) -> PaginatedResponse[PredictionResponse]:
+        predictions = await self.pred_repo.list_by_user(user_id, cursor=cursor, limit=limit + 1)
         has_more = len(predictions) > limit
         if has_more:
             predictions = predictions[:limit]
