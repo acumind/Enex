@@ -22,11 +22,7 @@ class PredictionRepository(BaseRepository[Prediction]):
         cursor: datetime | None = None,
         limit: int = 20,
     ) -> list[Prediction]:
-        stmt = (
-            select(Prediction)
-            .where(Prediction.predictor_id == predictor_id)
-            .order_by(Prediction.created_at.desc())
-        )
+        stmt = select(Prediction).where(Prediction.predictor_id == predictor_id).order_by(Prediction.created_at.desc())
         if cursor is not None:
             stmt = stmt.where(Prediction.created_at < cursor)
         stmt = stmt.limit(limit)
@@ -40,11 +36,7 @@ class PredictionRepository(BaseRepository[Prediction]):
         cursor: datetime | None = None,
         limit: int = 20,
     ) -> list[Prediction]:
-        stmt = (
-            select(Prediction)
-            .where(Prediction.stock_id == stock_id)
-            .order_by(Prediction.created_at.desc())
-        )
+        stmt = select(Prediction).where(Prediction.stock_id == stock_id).order_by(Prediction.created_at.desc())
         if cursor is not None:
             stmt = stmt.where(Prediction.created_at < cursor)
         stmt = stmt.limit(limit)
@@ -58,11 +50,7 @@ class PredictionRepository(BaseRepository[Prediction]):
         cursor: datetime | None = None,
         limit: int = 20,
     ) -> list[Prediction]:
-        stmt = (
-            select(Prediction)
-            .where(Prediction.status == status)
-            .order_by(Prediction.created_at.desc())
-        )
+        stmt = select(Prediction).where(Prediction.status == status).order_by(Prediction.created_at.desc())
         if cursor is not None:
             stmt = stmt.where(Prediction.created_at < cursor)
         stmt = stmt.limit(limit)
@@ -76,11 +64,7 @@ class PredictionRepository(BaseRepository[Prediction]):
         limit: int = 20,
     ) -> list[Prediction]:
         """List recently approved predictions."""
-        stmt = (
-            select(Prediction)
-            .where(Prediction.status == "approved")
-            .order_by(Prediction.created_at.desc())
-        )
+        stmt = select(Prediction).where(Prediction.status == "approved").order_by(Prediction.created_at.desc())
         if cursor is not None:
             stmt = stmt.where(Prediction.created_at < cursor)
         stmt = stmt.limit(limit)
@@ -94,11 +78,7 @@ class PredictionRepository(BaseRepository[Prediction]):
         cursor: datetime | None = None,
         limit: int = 20,
     ) -> list[Prediction]:
-        stmt = (
-            select(Prediction)
-            .where(Prediction.submitted_by == user_id)
-            .order_by(Prediction.created_at.desc())
-        )
+        stmt = select(Prediction).where(Prediction.submitted_by == user_id).order_by(Prediction.created_at.desc())
         if cursor is not None:
             stmt = stmt.where(Prediction.created_at < cursor)
         stmt = stmt.limit(limit)

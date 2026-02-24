@@ -33,11 +33,7 @@ class StockRepository(BaseRepository[Stock]):
         cursor: datetime | None = None,
         limit: int = 20,
     ) -> list[Stock]:
-        stmt = (
-            select(Stock)
-            .where(Stock.is_active.is_(True))
-            .order_by(Stock.created_at.desc())
-        )
+        stmt = select(Stock).where(Stock.is_active.is_(True)).order_by(Stock.created_at.desc())
         if cursor is not None:
             stmt = stmt.where(Stock.created_at < cursor)
         stmt = stmt.limit(limit)

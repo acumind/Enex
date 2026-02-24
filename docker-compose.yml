@@ -29,6 +29,34 @@ services:
       timeout: 5s
       retries: 5
 
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: enex-celery-worker
+    command: celery -A app.jobs.celery_app worker --loglevel=info
+    env_file:
+      - ./backend/.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  celery-beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: enex-celery-beat
+    command: celery -A app.jobs.celery_app beat --loglevel=info
+    env_file:
+      - ./backend/.env
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   redis_data:

@@ -22,9 +22,7 @@ async def test_get_predictor_not_found(client: AsyncClient) -> None:
 
 
 async def test_get_predictor_members(client: AsyncClient, db_session: AsyncSession) -> None:
-    parent = await create_test_predictor(
-        db_session, name="Firm", slug="firm", predictor_type="brokerage"
-    )
+    parent = await create_test_predictor(db_session, name="Firm", slug="firm", predictor_type="brokerage")
     await create_test_predictor(db_session, name="Analyst A", parent_id=parent.id)
     await create_test_predictor(db_session, name="Analyst B", parent_id=parent.id)
 

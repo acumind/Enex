@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_mock_response(html: str, status_code: int = 200) -> MagicMock:
     """Build a mock httpx.Response with .text and .raise_for_status()."""
     response = MagicMock()

@@ -26,10 +26,12 @@ async def test_bulk_create_skips_duplicates(db_session: AsyncSession) -> None:
     await create_test_stock(db_session, symbol="TCS")
 
     repo = StockRepository(db_session)
-    count = await repo.bulk_create([
-        {"id": uuid.uuid4(), "symbol": "TCS", "name": "TCS Ltd", "exchange": "NSE"},
-        {"id": uuid.uuid4(), "symbol": "INFY", "name": "Infosys Ltd", "exchange": "NSE"},
-    ])
+    count = await repo.bulk_create(
+        [
+            {"id": uuid.uuid4(), "symbol": "TCS", "name": "TCS Ltd", "exchange": "NSE"},
+            {"id": uuid.uuid4(), "symbol": "INFY", "name": "Infosys Ltd", "exchange": "NSE"},
+        ]
+    )
     assert count == 1  # only INFY inserted, TCS skipped
 
 

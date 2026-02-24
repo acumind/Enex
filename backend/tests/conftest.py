@@ -65,6 +65,7 @@ async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
 # Factory helpers
 # ---------------------------------------------------------------------------
 
+
 async def create_test_user(
     db_session: AsyncSession,
     *,

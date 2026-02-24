@@ -27,9 +27,7 @@ async def test_returns_none_when_disabled(mock_get_settings: MagicMock) -> None:
 
 @patch("app.integrations.archive.wayback_adapter.get_settings")
 @patch("app.integrations.archive.wayback_adapter.httpx.AsyncClient")
-async def test_returns_snapshot_url_on_success(
-    mock_async_client_cls: MagicMock, mock_get_settings: MagicMock
-) -> None:
+async def test_returns_snapshot_url_on_success(mock_async_client_cls: MagicMock, mock_get_settings: MagicMock) -> None:
     """On 200 with a content-location header, return the full archive URL."""
     settings = MagicMock()
     settings.WAYBACK_ARCHIVAL_ENABLED = True
@@ -89,9 +87,7 @@ async def test_returns_fallback_url_when_no_content_location(
 
 @patch("app.integrations.archive.wayback_adapter.get_settings")
 @patch("app.integrations.archive.wayback_adapter.httpx.AsyncClient")
-async def test_returns_none_on_server_error(
-    mock_async_client_cls: MagicMock, mock_get_settings: MagicMock
-) -> None:
+async def test_returns_none_on_server_error(mock_async_client_cls: MagicMock, mock_get_settings: MagicMock) -> None:
     """On a 500 status code, return None."""
     settings = MagicMock()
     settings.WAYBACK_ARCHIVAL_ENABLED = True
@@ -118,9 +114,7 @@ async def test_returns_none_on_server_error(
 
 @patch("app.integrations.archive.wayback_adapter.get_settings")
 @patch("app.integrations.archive.wayback_adapter.httpx.AsyncClient")
-async def test_returns_none_on_timeout(
-    mock_async_client_cls: MagicMock, mock_get_settings: MagicMock
-) -> None:
+async def test_returns_none_on_timeout(mock_async_client_cls: MagicMock, mock_get_settings: MagicMock) -> None:
     """On a timeout exception, return None gracefully."""
     settings = MagicMock()
     settings.WAYBACK_ARCHIVAL_ENABLED = True
@@ -143,9 +137,7 @@ async def test_returns_none_on_timeout(
 
 @patch("app.integrations.archive.wayback_adapter.get_settings")
 @patch("app.integrations.archive.wayback_adapter.httpx.AsyncClient")
-async def test_returns_none_on_connection_error(
-    mock_async_client_cls: MagicMock, mock_get_settings: MagicMock
-) -> None:
+async def test_returns_none_on_connection_error(mock_async_client_cls: MagicMock, mock_get_settings: MagicMock) -> None:
     """On a connection error, return None gracefully."""
     settings = MagicMock()
     settings.WAYBACK_ARCHIVAL_ENABLED = True

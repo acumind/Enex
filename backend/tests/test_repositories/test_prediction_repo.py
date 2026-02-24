@@ -114,7 +114,9 @@ async def test_list_by_predictor_pagination(db_session: AsyncSession) -> None:
     base_time = datetime(2025, 1, 1)
     for i in range(5):
         await _create_prediction(
-            db_session, predictor.id, stock.id,
+            db_session,
+            predictor.id,
+            stock.id,
             created_at=base_time - timedelta(hours=i),
         )
 
@@ -161,7 +163,10 @@ async def test_find_duplicate_exact_match(db_session: AsyncSession) -> None:
 
     repo = PredictionRepository(db_session)
     dup = await repo.find_duplicate(
-        predictor.id, stock.id, Decimal("1500.00"), date(2025, 1, 15),
+        predictor.id,
+        stock.id,
+        Decimal("1500.00"),
+        date(2025, 1, 15),
     )
     assert dup is not None
 
@@ -175,7 +180,10 @@ async def test_find_duplicate_within_tolerance(db_session: AsyncSession) -> None
     repo = PredictionRepository(db_session)
     # Target ±5% of 1500 = 1425-1575
     dup = await repo.find_duplicate(
-        predictor.id, stock.id, Decimal("1520.00"), date(2025, 1, 20),
+        predictor.id,
+        stock.id,
+        Decimal("1520.00"),
+        date(2025, 1, 20),
     )
     assert dup is not None
 
@@ -189,7 +197,10 @@ async def test_find_duplicate_no_match_outside_tolerance(db_session: AsyncSessio
     repo = PredictionRepository(db_session)
     # Target very different price
     dup = await repo.find_duplicate(
-        predictor.id, stock.id, Decimal("2000.00"), date(2025, 1, 15),
+        predictor.id,
+        stock.id,
+        Decimal("2000.00"),
+        date(2025, 1, 15),
     )
     assert dup is None
 
@@ -203,7 +214,10 @@ async def test_find_duplicate_no_match_outside_date_range(db_session: AsyncSessi
     repo = PredictionRepository(db_session)
     # Date >30 days away
     dup = await repo.find_duplicate(
-        predictor.id, stock.id, Decimal("1500.00"), date(2025, 6, 1),
+        predictor.id,
+        stock.id,
+        Decimal("1500.00"),
+        date(2025, 6, 1),
     )
     assert dup is None
 
@@ -216,6 +230,9 @@ async def test_find_duplicate_ignores_rejected(db_session: AsyncSession) -> None
 
     repo = PredictionRepository(db_session)
     dup = await repo.find_duplicate(
-        predictor.id, stock.id, Decimal("1500.00"), date(2025, 1, 15),
+        predictor.id,
+        stock.id,
+        Decimal("1500.00"),
+        date(2025, 1, 15),
     )
     assert dup is None

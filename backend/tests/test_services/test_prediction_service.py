@@ -118,7 +118,8 @@ async def test_create_with_extraction_metadata(db_session: AsyncSession) -> None
     service = PredictionService(db_session)
 
     data = _prediction_data(
-        predictor.id, stock.id,
+        predictor.id,
+        stock.id,
         extraction_method=ExtractionMethod.ai_assisted,
         ai_confidence=Decimal("0.85"),
     )

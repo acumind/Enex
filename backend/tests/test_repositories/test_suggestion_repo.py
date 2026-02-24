@@ -126,7 +126,8 @@ async def test_list_by_status_pagination(db_session: AsyncSession) -> None:
     base_time = datetime(2025, 1, 1)
     for i in range(5):
         await _create_suggestion(
-            db_session, user.id,
+            db_session,
+            user.id,
             created_at=base_time - timedelta(hours=i),
         )
 

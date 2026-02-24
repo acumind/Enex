@@ -8,6 +8,7 @@ from app.schemas.extraction import ExtractionResult
 # Helpers to build mock Anthropic responses
 # ---------------------------------------------------------------------------
 
+
 def _make_tool_use_block(predictions: list[dict]) -> MagicMock:
     """Build a mock content block with type='tool_use' and name='report_predictions'."""
     block = MagicMock()

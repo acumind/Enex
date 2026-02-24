@@ -53,7 +53,10 @@ class PredictionService:
 
         # Duplicate detection
         duplicate = await self.pred_repo.find_duplicate(
-            data.predictor_id, data.stock_id, data.target_price, data.prediction_date,
+            data.predictor_id,
+            data.stock_id,
+            data.target_price,
+            data.prediction_date,
         )
         if duplicate is not None:
             raise ConflictError("A similar prediction already exists for this predictor, stock, and target price")

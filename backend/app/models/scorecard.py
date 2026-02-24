@@ -12,9 +12,7 @@ from app.models.base import Base
 class PredictorScorecard(Base):
     __tablename__ = "predictor_scorecards"
 
-    predictor_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("predictors.id"), primary_key=True
-    )
+    predictor_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("predictors.id"), primary_key=True)
     total_predictions: Mapped[int] = mapped_column(Integer, server_default="0", nullable=False)
     hits: Mapped[int] = mapped_column(Integer, server_default="0", nullable=False)
     misses: Mapped[int] = mapped_column(Integer, server_default="0", nullable=False)

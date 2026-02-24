@@ -19,9 +19,7 @@ class PredictorRepository(BaseRepository[Predictor]):
         return result.scalar_one_or_none()
 
     async def slug_exists(self, slug: str) -> bool:
-        result = await self.session.execute(
-            select(Predictor.id).where(Predictor.slug == slug).limit(1)
-        )
+        result = await self.session.execute(select(Predictor.id).where(Predictor.slug == slug).limit(1))
         return result.scalar_one_or_none() is not None
 
     async def list_by_type(

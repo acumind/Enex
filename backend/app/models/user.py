@@ -28,9 +28,7 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(server_default=func.now(), nullable=False)
     last_login_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
-    __table_args__ = (
-        CheckConstraint("email IS NOT NULL OR phone IS NOT NULL", name="user_has_identity"),
-    )
+    __table_args__ = (CheckConstraint("email IS NOT NULL OR phone IS NOT NULL", name="user_has_identity"),)
 
 
 class OTPCode(Base):

@@ -13,12 +13,8 @@ class Prediction(Base):
     __tablename__ = "predictions"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    predictor_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("predictors.id"), nullable=False
-    )
-    stock_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("stocks.id"), nullable=False
-    )
+    predictor_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("predictors.id"), nullable=False)
+    stock_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("stocks.id"), nullable=False)
 
     target_price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     price_at_prediction: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
@@ -31,15 +27,11 @@ class Prediction(Base):
     source_archive_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     raw_quote: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    submitted_by: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
-    )
+    submitted_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     extraction_method: Mapped[str] = mapped_column(String(30), server_default="manual", nullable=False)
     ai_confidence: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     status: Mapped[str] = mapped_column(String(20), server_default="pending_review", nullable=False)
-    reviewed_by: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
-    )
+    reviewed_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     reviewed_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(server_default=func.now(), nullable=False)
@@ -78,9 +70,7 @@ class PredictionOutcome(Base):
     created_at: Mapped[datetime] = mapped_column(server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now(), nullable=False)
 
-    __table_args__ = (
-        Index("idx_outcomes_status", "outcome_status"),
-    )
+    __table_args__ = (Index("idx_outcomes_status", "outcome_status"),)
 
 
 class PredictionSuggestion(Base):
@@ -89,20 +79,14 @@ class PredictionSuggestion(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     url: Mapped[str] = mapped_column(String(1000), nullable=False)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
-    submitted_by: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
-    )
+    submitted_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     status: Mapped[str] = mapped_column(String(20), server_default="pending", nullable=False)
     promoted_to: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("predictions.id"), nullable=True
     )
-    reviewed_by: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
-    )
+    reviewed_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     reviewed_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(server_default=func.now(), nullable=False)
 
-    __table_args__ = (
-        Index("idx_suggestions_status", "status", created_at.desc()),
-    )
+    __table_args__ = (Index("idx_suggestions_status", "status", created_at.desc()),)

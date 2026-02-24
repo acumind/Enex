@@ -61,7 +61,8 @@ async def test_submit_with_extraction_metadata(client: AsyncClient, db_session: 
     stock = await create_test_stock(db_session)
 
     payload = _prediction_payload(
-        predictor.id, stock.id,
+        predictor.id,
+        stock.id,
         extraction_method="ai_assisted",
         ai_confidence="0.85",
     )

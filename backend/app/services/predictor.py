@@ -44,9 +44,7 @@ class PredictorService:
             if parent is None:
                 raise NotFoundError("Parent predictor not found")
             if parent.type not in _ORG_TYPES:
-                raise BusinessRuleViolation(
-                    f"Parent must be one of: {', '.join(sorted(_ORG_TYPES))}"
-                )
+                raise BusinessRuleViolation(f"Parent must be one of: {', '.join(sorted(_ORG_TYPES))}")
 
         slug = await self._unique_slug(_generate_slug(data.name))
 
@@ -110,9 +108,7 @@ class PredictorService:
             raise NotFoundError("Predictor not found")
 
         pred_repo = PredictionRepository(self.repo.session)
-        predictions = await pred_repo.list_by_predictor(
-            predictor.id, cursor=cursor, limit=limit + 1
-        )
+        predictions = await pred_repo.list_by_predictor(predictor.id, cursor=cursor, limit=limit + 1)
         has_more = len(predictions) > limit
         if has_more:
             predictions = predictions[:limit]

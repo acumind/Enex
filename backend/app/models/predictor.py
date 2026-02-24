@@ -15,9 +15,7 @@ class Predictor(Base):
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     slug: Mapped[str] = mapped_column(String(200), nullable=False, unique=True)
     type: Mapped[str] = mapped_column(String(30), nullable=False)
-    parent_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("predictors.id"), nullable=True
-    )
+    parent_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("predictors.id"), nullable=True)
 
     designation: Mapped[str | None] = mapped_column(String(200), nullable=True)
     bio: Mapped[str | None] = mapped_column(Text, nullable=True)
