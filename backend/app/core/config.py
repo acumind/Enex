@@ -65,10 +65,6 @@ class Settings(BaseSettings):
     NOTIFICATION_EMAIL_ENABLED: bool = False
     NOTIFICATION_BATCH_SIZE: int = 100
 
-    # Sentry
-    SENTRY_DSN: str = ""
-    SENTRY_TRACES_SAMPLE_RATE: float = 1.0
-
     @property
     def cors_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",")]
