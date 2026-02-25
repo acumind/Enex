@@ -2,7 +2,7 @@
 
 > Living document tracking sprint-wise completion, observations, and guidance for future implementation.
 >
-> Last updated: 2026-02-26
+> Last updated: 2026-02-25
 
 ---
 
@@ -436,6 +436,141 @@ backend/
 
 ---
 
+## Sprint 5: Public Interface & SEO (Completed)
+
+### Objective
+
+Build the public-facing frontend pages and supporting backend endpoints. Make the product usable by the public with homepage, leaderboard, predictor profiles, stock pages, search, and SEO fundamentals.
+
+### Tasks Completed
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 1 | Search endpoint (`GET /search`) | Done | ILIKE on predictor name/slug and stock name/symbol, combined response |
+| 2 | Leaderboard filters | Done | `predictor_type` and `sort_by` (accuracy, total_predictions, streak_current) params |
+| 3 | Stocks listing endpoint (`GET /stocks`) | Done | Optional sector ILIKE filter, cursor pagination |
+| 4 | Search schemas | Done | `SearchHit`, `SearchResponse` in `schemas/search.py` |
+| 5 | Frontend TypeScript types | Done | `PredictorResponse`, `StockResponse`, `LeaderboardEntry`, `ScorecardResponse`, `PredictionOutcomeResponse`, `SearchHit`, `SearchResponse` |
+| 6 | Install recharts | Done | Added to frontend dependencies for sector accuracy chart |
+| 7 | Navbar component | Done | Logo, leaderboard link, search bar, auth-aware login/logout |
+| 8 | Footer component | Done | Disclaimer, copyright, links |
+| 9 | Search bar component | Done | Client component, 300ms debounce, dropdown results, navigate on click |
+| 10 | Outcome badge component | Done | Color-coded: green=hit, yellow=partial, red=miss, gray=pending/expired |
+| 11 | Accuracy badge component | Done | Percentage with color tiers (>70% green, 40-70% yellow, <40% red) |
+| 12 | Prediction card component | Done | Card with predictor, stock, target, upside %, outcome badge, dates |
+| 13 | Root layout update | Done | Navbar + Footer wrapping all pages, min-h-screen flex layout |
+| 14 | Homepage | Done | Hero section, recent predictions grid (6), top-5 leaderboard table, server component with 60s revalidation |
+| 15 | Leaderboard page | Done | Server shell with metadata + client component: type filter tabs, sort dropdown, paginated table |
+| 16 | Predictor profile page | Done | Server metadata + client: header, scorecard cards, Recharts sector accuracy bar chart, prediction history, firm members |
+| 17 | Stock page | Done | Server metadata + client: stock info header, price/market cap/consensus cards, prediction list |
+| 18 | SEO — robots.ts | Done | Allow all crawlers, reference sitemap URL |
+| 19 | SEO — sitemap.ts | Done | Static routes (/, /leaderboard) + dynamic routes from search API |
+| 20 | SEO — generateMetadata | Done | On all pages: homepage, leaderboard, predictor profile, stock page |
+| 21 | Search API tests (6 tests) | Done | Match predictors, match stocks, combined, empty query 422, no match, limit |
+| 22 | Leaderboard filter tests (2 tests) | Done | Filter by predictor_type, sort by total_predictions |
+| 23 | Stocks listing tests (3 tests) | Done | Empty list, returns active, filter by sector |
+
+### Verification Results
+
+| Check | Result |
+|-------|--------|
+| `ruff check .` | All checks passed |
+| `pytest -v` | 306/306 passed (295 existing + 11 new) |
+| `npm run lint` | Clean |
+| `npx tsc --noEmit` | Clean |
+| `npm run build` | Success (18 routes, predictor/stock dynamic) |
+
+### API Endpoints Added (Sprint 5)
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/api/v1/search?q=...&limit=10` | None | Search predictors and stocks by name/symbol |
+| `GET` | `/api/v1/stocks` | None | List stocks with optional sector filter, cursor pagination |
+
+### API Endpoints Modified (Sprint 5)
+
+| Method | Path | Change |
+|--------|------|--------|
+| `GET` | `/api/v1/leaderboard` | Added `predictor_type` and `sort_by` query params |
+
+### Files Created
+
+```
+backend/
+  app/api/routes/search.py
+  app/schemas/search.py
+  tests/test_api/test_search_api.py
+frontend/
+  components/navbar.tsx
+  components/footer.tsx
+  components/search-bar.tsx
+  components/outcome-badge.tsx
+  components/accuracy-badge.tsx
+  components/prediction-card.tsx
+  app/(public)/leaderboard/leaderboard-client.tsx
+  app/(public)/predictor/[slug]/predictor-profile-client.tsx
+  app/(public)/stock/[symbol]/page.tsx
+  app/(public)/stock/[symbol]/stock-client.tsx
+  app/robots.ts
+  app/sitemap.ts
+```
+
+### Files Modified
+
+```
+backend/
+  app/repositories/predictor.py — added search()
+  app/repositories/stock.py — added search(), list_with_filters()
+  app/repositories/scorecard.py — added predictor_type + sort_by to get_leaderboard()
+  app/api/routes/outcomes.py — added leaderboard filter query params
+  app/api/routes/stocks.py — added GET /stocks listing endpoint
+  app/services/stock.py — added list_with_filters()
+  app/main.py — registered search_router
+  tests/test_api/test_outcomes_api.py — added leaderboard filter tests
+  tests/test_api/test_stocks_api.py — added stocks listing tests
+frontend/
+  lib/types.ts — added 7 new interfaces
+  package.json — added recharts
+  app/layout.tsx — added Navbar + Footer
+  app/page.tsx — built out homepage (hero, predictions, leaderboard preview)
+  app/(public)/leaderboard/page.tsx — built out leaderboard with metadata
+  app/(public)/predictor/[slug]/page.tsx — built out predictor profile with metadata
+```
+
+---
+
+## Observations & Decisions Made During Sprint 5
+
+### 1. Server components for initial data, client components for interactivity
+
+All public pages use a **server component shell** for `generateMetadata` and initial data fetching (with `next: { revalidate: 60 }`), then delegate interactive parts (filters, pagination, search) to `"use client"` child components. This gives SEO benefits while keeping interactivity on the client.
+
+### 2. Search endpoint uses direct repository access (no service layer)
+
+The search route directly instantiates `PredictorRepository` and `StockRepository` from the injected DB session, bypassing the service layer. This is intentional — search is a simple read-only aggregation across two repos with no business logic, so a service class would be pure pass-through.
+
+### 3. Leaderboard uses offset pagination (not cursor)
+
+Unlike other list endpoints that use cursor-based pagination, the leaderboard uses offset-based pagination. This is because leaderboard results are sorted by computed fields (accuracy, streak) rather than `created_at`, making cursor-based pagination impractical. The existing `offset` param from Sprint 4 was preserved.
+
+### 4. Homepage fetches data at request time with ISR
+
+The homepage is a server component that fetches `/predictions/recent` and `/leaderboard` with `revalidate: 60`. This provides ISR-like behavior — pages are cached for 60 seconds and regenerated on the next request after expiry.
+
+### 5. Sitemap uses search API as a proxy for listing entities
+
+The sitemap generator calls `GET /search?q=%25&limit=50` to discover predictors and stocks, since the search endpoint's `%` ILIKE pattern effectively returns all entities. A dedicated listing endpoint for sitemap generation could be added later if the entity count grows beyond 50.
+
+### 6. Recharts for sector accuracy visualization
+
+Recharts was chosen for the sector accuracy bar chart on predictor profiles. The `BarChart` renders `scorecard.sector_accuracy` entries (sector → percentage). The chart uses CSS variables (`hsl(var(--chart-1))`) for theming consistency with Shadcn/ui.
+
+### 7. Prediction tables show truncated UUIDs for stock/predictor references
+
+The prediction history tables display `stock_id.slice(0, 8)` and `predictor_id.slice(0, 8)` as placeholders. In a future sprint, these should be replaced with actual stock symbols and predictor names by enriching the prediction response or using a separate lookup.
+
+---
+
 ## Observations & Decisions Made During Sprint 4
 
 ### 1. Bullish vs bearish evaluation logic
@@ -690,21 +825,15 @@ npx shadcn@latest add card      # adds Card component
 - Rate limit OTP requests: 5/hour per identifier (already have the Redis infrastructure from Sprint 2)
 - `user_has_identity` CHECK constraint requires at least email or phone — enforce at the API layer too
 
-### Sprint 5: Public Interface & SEO
+### Sprint 6+: Upcoming Work
 
-**Scope:** SSG/ISR pages for leaderboard, predictor profiles, stock pages, search + responsive design.
-
-**Key frontend patterns:**
-- Leaderboard: Server Component with ISR (revalidate every 5–10 minutes)
-- Predictor profiles: dynamic route `[slug]` with `generateStaticParams` for popular predictors
-- Use TanStack Query for client-side data fetching on interactive pages
-- Zustand for client state (filters, sort preferences, theme)
-- Recharts or Tremor for accuracy trend charts
-
-**Watch out for:**
-- SEO is critical for this sprint — every predictor profile needs proper `<title>`, `description`, and OpenGraph tags
-- The `predictor_scorecards` table must have `total_predictions >= 10` for the accuracy index — handle "insufficient data" display
-- Cursor-based pagination already implemented on all list endpoints — frontend just needs to wire it up
+**Potential areas for next sprints:**
+- Notifications & Watchlists — user-facing alerts when predictions are evaluated
+- Enrich prediction tables with stock symbols and predictor names (currently showing truncated UUIDs)
+- OpenGraph images for social sharing
+- Dark mode toggle
+- `generateStaticParams` for popular predictors/stocks (pre-render at build time)
+- Zustand for client state (filters, sort preferences, theme persistence)
 
 ---
 
@@ -763,12 +892,14 @@ app/
 | `upside_pct` generated column | 4 | Open | Compute in app layer or add manual migration with `ALTER TABLE` |
 | Azure infra provisioning | Post-MVP | Open | Needs Azure subscription, Bicep templates in `infra/` |
 | ~~Celery app setup~~ | ~~2~~ | **Done** | Created in Sprint 2 (`app/jobs/celery_app.py`) |
-| OpenAPI client generation | 5 | Open | Use `openapi-typescript-fetch` to generate typed frontend API client from backend spec |
+| OpenAPI client generation | 6+ | Open | Use `openapi-typescript-fetch` to generate typed frontend API client from backend spec |
 | Database user separation | Production | Open | Use `enex_app` (DML only) for runtime, `enex_migrations` (DDL) for Alembic |
-| Content Security Policy headers | 5+ | Open | Add via FastAPI middleware per SECURITY.md |
+| Content Security Policy headers | 6+ | Open | Add via FastAPI middleware per SECURITY.md |
 | Load testing | Post-MVP | Open | Use `locust` or `k6` before public launch |
 | ~~`nsetools` as yfinance fallback~~ | ~~4~~ | **Deferred** | yfinance adapter implemented with `.NS` suffix handling; `nsetools` can be added as a fallback later if needed |
 | ~~Pre-commit config~~ | ~~Next sprint~~ | **Done** | `.pre-commit-config.yaml` exists with local ruff hooks |
 | ~~Frontend auth middleware~~ | ~~3~~ | **Done** | Middleware.ts redirects protected paths to login when no refresh_token cookie |
 | Celery worker deployment | 3+ | Open | Worker uses same image with different entrypoint — Docker Compose service not yet added |
-| Next.js middleware → proxy migration | 5+ | Open | Next.js 16 deprecates `middleware.ts` in favor of `proxy` convention |
+| Next.js middleware → proxy migration | 6+ | Open | Next.js 16 deprecates `middleware.ts` in favor of `proxy` convention |
+| Prediction table enrichment | 6 | Open | Replace truncated UUIDs with stock symbols and predictor names in prediction history tables |
+| Sitemap dedicated listing endpoint | 6+ | Open | Current sitemap uses search API with `%` pattern; add dedicated endpoint if entity count grows |
