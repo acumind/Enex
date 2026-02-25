@@ -2,7 +2,7 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Date, ForeignKey, Index, Numeric, String, Text, func
+from sqlalchemy import Computed, Date, ForeignKey, Index, Numeric, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -18,6 +18,10 @@ class Prediction(Base):
 
     target_price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     price_at_prediction: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    upside_pct: Mapped[Decimal | None] = mapped_column(
+        Numeric(8, 2),
+        Computed("ROUND((target_price - price_at_prediction) / NULLIF(price_at_prediction, 0) * 100, 2)"),
+    )
     prediction_date: Mapped[date] = mapped_column(Date, nullable=False)
     target_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     default_eval_date: Mapped[date] = mapped_column(Date, nullable=False)

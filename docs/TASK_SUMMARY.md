@@ -998,7 +998,7 @@ app/
 
 | Item | Sprint | Status | Notes |
 |------|--------|--------|-------|
-| `upside_pct` generated column | 4 | Open | Compute in app layer or add manual migration with `ALTER TABLE` |
+| ~~`upside_pct` generated column~~ | ~~4~~ | **Done** | PostgreSQL `GENERATED ALWAYS AS` stored column, Alembic migration `67fa22f6433e` |
 | Azure infra provisioning | Post-MVP | Open | Needs Azure subscription, Bicep templates in `infra/` |
 | ~~Celery app setup~~ | ~~2~~ | **Done** | Created in Sprint 2 (`app/jobs/celery_app.py`) |
 | OpenAPI client generation | 6+ | Open | Use `openapi-typescript-fetch` to generate typed frontend API client from backend spec |

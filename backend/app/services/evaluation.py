@@ -176,12 +176,10 @@ class EvaluationService:
             avg_deviation = round(Decimal(str(avg_deviation)), 2)
 
         # Average upside predicted
-        avg_upside_stmt = select(
-            func.avg((Prediction.target_price - Prediction.price_at_prediction) / Prediction.price_at_prediction * 100)
-        ).where(
+        avg_upside_stmt = select(func.avg(Prediction.upside_pct)).where(
             Prediction.predictor_id == predictor_id,
             Prediction.status == "approved",
-            Prediction.price_at_prediction > 0,
+            Prediction.upside_pct.isnot(None),
         )
         avg_upside_result = await self.session.execute(avg_upside_stmt)
         avg_upside = avg_upside_result.scalar_one()
