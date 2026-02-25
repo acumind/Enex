@@ -61,6 +61,10 @@ class Settings(BaseSettings):
     WAYBACK_ARCHIVAL_ENABLED: bool = False
     WAYBACK_TIMEOUT_SECONDS: int = 10
 
+    # Notifications
+    NOTIFICATION_EMAIL_ENABLED: bool = False
+    NOTIFICATION_BATCH_SIZE: int = 100
+
     # Sentry
     SENTRY_DSN: str = ""
     SENTRY_TRACES_SAMPLE_RATE: float = 1.0

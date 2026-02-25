@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
+import { NotificationBell } from "@/components/notification-bell";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { SearchBar } from "@/components/search-bar";
 
 export function Navbar() {
@@ -22,10 +24,18 @@ export function Navbar() {
           >
             Leaderboard
           </Link>
+          <Link
+            href="/about"
+            className="text-muted-foreground transition-colors hover:text-foreground"
+          >
+            About
+          </Link>
         </nav>
 
         <div className="ml-auto flex items-center gap-3">
+          <ThemeToggle />
           <SearchBar />
+          <NotificationBell />
           {isAuthenticated ? (
             <div className="flex items-center gap-2">
               <span className="text-sm text-muted-foreground">

@@ -7,12 +7,15 @@ from app.core.database import get_db
 from app.services.auth import AuthService
 from app.services.evaluation import EvaluationService
 from app.services.extraction import ExtractionService
+from app.services.follow import FollowService
+from app.services.notification import NotificationService
 from app.services.prediction import PredictionService
 from app.services.predictor import PredictorService
 from app.services.price_fetcher import PriceFetcherService
 from app.services.stock import StockService
 from app.services.suggestion import SuggestionService
 from app.services.user import UserService
+from app.services.watchlist import WatchlistService
 
 
 def get_auth_service(db: AsyncSession = Depends(get_db)) -> AuthService:
@@ -49,3 +52,15 @@ def get_evaluation_service(db: AsyncSession = Depends(get_db)) -> EvaluationServ
 
 def get_price_fetcher_service(db: AsyncSession = Depends(get_db)) -> PriceFetcherService:
     return PriceFetcherService(db)
+
+
+def get_watchlist_service(db: AsyncSession = Depends(get_db)) -> WatchlistService:
+    return WatchlistService(db)
+
+
+def get_follow_service(db: AsyncSession = Depends(get_db)) -> FollowService:
+    return FollowService(db)
+
+
+def get_notification_service(db: AsyncSession = Depends(get_db)) -> NotificationService:
+    return NotificationService(db)

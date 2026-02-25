@@ -2,7 +2,7 @@
 
 > Living document tracking sprint-wise completion, observations, and guidance for future implementation.
 >
-> Last updated: 2026-02-25
+> Last updated: 2026-02-26
 
 ---
 
@@ -539,6 +539,116 @@ frontend/
 
 ---
 
+## Sprint 6: User Engagement & Pre-Launch Polish (Completed)
+
+### Objective
+
+Wire up the existing `UserWatchlist`, `UserFollowedPredictor`, and `Notification` DB models with full backend APIs and frontend UI. Add notification dispatch via Celery, enrich prediction tables with names, implement dark mode, about page, and functional dashboard. Prepare for MVP launch.
+
+### Tasks Completed
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 1 | Engagement Schemas | Done | `WatchlistAdd`, `WatchlistItemEnriched`, `FollowAdd`, `FollowItemEnriched` |
+| 2 | Watchlist Repository | Done | Composite PK (no BaseRepository), add/remove/exists/list/count/list_users_watching |
+| 3 | Follow Repository | Done | Same composite PK pattern, mirrors watchlist repo |
+| 4 | Watchlist Service | Done | Validates stock exists, ConflictError/NotFoundError, paginated list |
+| 5 | Follow Service | Done | Validates predictor exists, same pattern as watchlist |
+| 6 | Watchlist Routes | Done | POST/DELETE/GET/GET check — all require auth |
+| 7 | Follow Routes | Done | POST/DELETE/GET/GET check — all require auth |
+| 8 | Notification Schemas | Done | `NotificationResponse`, `UnreadCountResponse` |
+| 9 | Notification Repository | Done | Extends BaseRepository, mark_read/mark_all_read/create_bulk |
+| 10 | Notification Service | Done | Create, list, count_unread, mark_read, mark_all_read |
+| 11 | Notification Routes | Done | GET list, GET unread-count, POST read, POST read-all |
+| 12 | Config Settings | Done | `NOTIFICATION_EMAIL_ENABLED`, `NOTIFICATION_BATCH_SIZE` |
+| 13 | Notification Dispatch Celery Tasks | Done | `dispatch_outcome_notifications_task`, `dispatch_new_prediction_notifications_task` |
+| 14 | Hook into Evaluation Job | Done | `evaluate_pending_predictions` returns `tuple[int, list[UUID]]`; dispatches notifications |
+| 15 | Hook into Prediction Approval | Done | `approve()` dispatches new-prediction notification via try/except |
+| 16 | Email Protocol Extension | Done | `send_notification(to, subject, html_body)` on protocol + ResendAdapter |
+| 17 | TypeScript Types | Done | Added all engagement/notification interfaces + enrichment fields on PredictionResponse |
+| 18 | Watchlist Button | Done | Client component with toggle, checks auth state |
+| 19 | Follow Button | Done | Same pattern as watchlist button |
+| 20 | Integrate Watchlist Button | Done | Added to stock page header |
+| 21 | Integrate Follow Button | Done | Added to predictor profile header |
+| 22 | Watchlist Page | Done | `/watchlist` — table with remove button, pagination |
+| 23 | Following Page | Done | `/following` — table with remove button, pagination |
+| 24 | Notification Bell | Done | Polls every 30s, dropdown with 5 recent, click-to-navigate |
+| 25 | Integrate Bell into Navbar | Done | Bell + ThemeToggle added to navbar |
+| 26 | Notifications Page | Done | `/notifications` — full list, mark-all-read, click-to-navigate |
+| 27 | Update Middleware | Done | Added `/watchlist`, `/following`, `/notifications` to protected paths |
+| 28 | Enrich Prediction Tables | Done | Enriched repo methods (joins), enriched service methods, linked names in frontend |
+| 29 | User Dashboard | Done | Summary cards (watchlist/following/unread), recent items, quick actions |
+| 30 | Dark Mode Toggle | Done | `useSyncExternalStore` + localStorage, persists preference |
+| 31 | About/Methodology Page | Done | Static server component with SEO metadata, scoring methodology |
+| 32 | Tests | Done | 79 new tests (385 total): repos, services, APIs, jobs, integrations |
+| 33 | Update TASK_SUMMARY.md | Done | This section |
+
+### Test Summary
+
+- **385 total tests** (306 existing + 79 new), all passing
+- **Ruff**: clean
+- **Frontend**: lint clean, tsc clean, build clean
+
+### New Files (29)
+
+**Backend (22):**
+```
+app/schemas/engagement.py, app/schemas/notification.py
+app/repositories/watchlist.py, app/repositories/follow.py, app/repositories/notification.py
+app/services/watchlist.py, app/services/follow.py, app/services/notification.py
+app/api/routes/watchlist.py, app/api/routes/following.py, app/api/routes/notifications.py
+app/jobs/notifications.py
+tests/test_repositories/test_watchlist_repo.py, test_follow_repo.py, test_notification_repo.py
+tests/test_services/test_watchlist_service.py, test_follow_service.py, test_notification_service.py
+tests/test_api/test_watchlist_api.py, test_following_api.py, test_notifications_api.py
+tests/test_jobs/test_notification_jobs.py
+```
+
+**Frontend (7):**
+```
+components/watchlist-button.tsx, follow-button.tsx, notification-bell.tsx, theme-toggle.tsx
+app/(user)/watchlist/page.tsx, following/page.tsx, notifications/page.tsx
+app/(public)/about/page.tsx
+```
+
+### Modified Files (18)
+
+**Backend:** `deps.py`, `main.py`, `config.py`, `evaluation.py` (service + job), `prediction.py` (service + repo + schema), `predictor.py` (service), `stocks.py` (route), `email/protocol.py`, `email/resend_adapter.py`, `outcome.py` (schema), `conftest.py`, `test_resend_adapter.py`, `test_evaluation_service.py`, `test_evaluation_job.py`
+
+**Frontend:** `types.ts`, `navbar.tsx`, `footer.tsx`, `middleware.ts`, `stock-client.tsx`, `predictor-profile-client.tsx`, `dashboard/page.tsx`
+
+**Docs:** `TASK_SUMMARY.md`
+
+---
+
+## Observations & Decisions Made During Sprint 6
+
+### 1. Composite PK repositories don't extend BaseRepository
+
+`UserWatchlist` and `UserFollowedPredictor` use `(user_id, stock_id)` / `(user_id, predictor_id)` as composite primary keys — no UUID `id` column. BaseRepository's `get_by_id()` doesn't work for these, so they get standalone repository classes with direct SQLAlchemy queries.
+
+### 2. Notification dispatch is async via Celery
+
+Evaluation and approval hooks dispatch notification tasks with `task.delay()` wrapped in try/except. This means notification dispatch never blocks the evaluation pipeline or approval flow — if Celery is down, the operation still succeeds silently.
+
+### 3. evaluate_pending_predictions return type changed
+
+Changed from `int` to `tuple[int, list[UUID]]` to pass evaluated prediction IDs to the notification task. All existing tests updated accordingly.
+
+### 4. Enriched prediction queries use joins
+
+Rather than N+1 queries, `list_by_stock_enriched()` and `list_by_predictor_enriched()` use `SELECT prediction, predictor.name, predictor.slug` (or stock equivalents) in a single query with a JOIN. The enrichment fields on `PredictionResponse` are optional (`None` by default) so existing non-enriched queries still work.
+
+### 5. Dark mode uses useSyncExternalStore
+
+The React strict mode linter flags `setState` inside `useEffect`. Using `useSyncExternalStore` with localStorage as the external store avoids this. The DOM class toggle happens synchronously during render, preventing flash-of-wrong-theme.
+
+### 6. Notification bell uses polling (not WebSocket)
+
+The bell polls `GET /notifications/unread-count` every 30 seconds. This is simpler than WebSocket/SSE and sufficient for MVP. A WebSocket upgrade can be done post-launch if needed.
+
+---
+
 ## Observations & Decisions Made During Sprint 5
 
 ### 1. Server components for initial data, client components for interactivity
@@ -825,15 +935,14 @@ npx shadcn@latest add card      # adds Card component
 - Rate limit OTP requests: 5/hour per identifier (already have the Redis infrastructure from Sprint 2)
 - `user_has_identity` CHECK constraint requires at least email or phone — enforce at the API layer too
 
-### Sprint 6+: Upcoming Work
+### Sprint 7+: Upcoming Work
 
 **Potential areas for next sprints:**
-- Notifications & Watchlists — user-facing alerts when predictions are evaluated
-- Enrich prediction tables with stock symbols and predictor names (currently showing truncated UUIDs)
 - OpenGraph images for social sharing
-- Dark mode toggle
 - `generateStaticParams` for popular predictors/stocks (pre-render at build time)
-- Zustand for client state (filters, sort preferences, theme persistence)
+- Zustand for client state (filters, sort preferences)
+- Email notifications (NOTIFICATION_EMAIL_ENABLED flag already in config)
+- Next.js middleware → proxy migration (Next.js 16 deprecation)
 
 ---
 
@@ -901,5 +1010,5 @@ app/
 | ~~Frontend auth middleware~~ | ~~3~~ | **Done** | Middleware.ts redirects protected paths to login when no refresh_token cookie |
 | Celery worker deployment | 3+ | Open | Worker uses same image with different entrypoint — Docker Compose service not yet added |
 | Next.js middleware → proxy migration | 6+ | Open | Next.js 16 deprecates `middleware.ts` in favor of `proxy` convention |
-| Prediction table enrichment | 6 | Open | Replace truncated UUIDs with stock symbols and predictor names in prediction history tables |
+| ~~Prediction table enrichment~~ | ~~6~~ | **Done** | Enriched queries with JOINs, linked names in frontend |
 | Sitemap dedicated listing endpoint | 6+ | Open | Current sitemap uses search API with `%` pattern; add dedicated endpoint if entity count grows |

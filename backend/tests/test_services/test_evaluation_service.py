@@ -171,8 +171,9 @@ async def test_evaluate_pending_predictions(service: EvaluationService) -> None:
     service.price_repo.get_price_on_date.return_value = _make_price_row(Decimal("1500.00"))
     service.price_repo.get_high_low_in_range.return_value = (Decimal("1600.00"), Decimal("700.00"))
 
-    count = await service.evaluate_pending_predictions(date(2026, 1, 15))
+    count, evaluated_ids = await service.evaluate_pending_predictions(date(2026, 1, 15))
     assert count == 2
+    assert len(evaluated_ids) == 2
     assert service.outcome_repo.create.await_count == 2
 
 

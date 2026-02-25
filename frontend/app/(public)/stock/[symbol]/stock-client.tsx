@@ -1,10 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { OutcomeBadge } from "@/components/outcome-badge";
+import { WatchlistButton } from "@/components/watchlist-button";
 import { api } from "@/lib/api-client";
 import type {
   PaginatedResponse,
@@ -68,6 +70,7 @@ export function StockClient({ stock, symbol }: Props) {
           <Badge variant="outline" className="font-mono">
             {stock.symbol}
           </Badge>
+          <WatchlistButton stockId={stock.id} />
         </div>
         <div className="mt-2 flex flex-wrap gap-3 text-sm text-muted-foreground">
           <span>{stock.exchange}</span>
@@ -165,8 +168,17 @@ export function StockClient({ stock, symbol }: Props) {
                       <td className="px-4 py-3 text-muted-foreground">
                         {p.prediction_date}
                       </td>
-                      <td className="px-4 py-3 text-xs">
-                        {p.predictor_id.slice(0, 8)}
+                      <td className="px-4 py-3 text-sm">
+                        {p.predictor_slug ? (
+                          <Link
+                            href={`/predictor/${p.predictor_slug}`}
+                            className="text-primary underline-offset-4 hover:underline"
+                          >
+                            {p.predictor_name || p.predictor_id.slice(0, 8)}
+                          </Link>
+                        ) : (
+                          p.predictor_id.slice(0, 8)
+                        )}
                       </td>
                       <td className="px-4 py-3 text-right tabular-nums">
                         ₹

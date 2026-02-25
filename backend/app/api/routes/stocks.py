@@ -42,4 +42,4 @@ async def get_stock_predictions(
 ) -> PaginatedResponse[PredictionResponse]:
     # Resolve symbol to stock (raises 404 if not found)
     stock = await stock_service.get_by_symbol(symbol)
-    return await prediction_service.list_by_stock(stock.id, cursor=cursor, limit=limit)
+    return await prediction_service.list_by_stock_enriched(stock.id, cursor=cursor, limit=limit)

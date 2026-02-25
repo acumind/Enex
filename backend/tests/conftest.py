@@ -261,6 +261,60 @@ async def create_test_outcome(
     return outcome
 
 
+async def create_test_watchlist_entry(
+    db_session: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    stock_id: uuid.UUID,
+) -> "UserWatchlist":  # type: ignore[name-defined]  # noqa: F821
+    from app.models.engagement import UserWatchlist
+
+    entry = UserWatchlist(user_id=user_id, stock_id=stock_id)
+    db_session.add(entry)
+    await db_session.flush()
+    return entry
+
+
+async def create_test_follow_entry(
+    db_session: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    predictor_id: uuid.UUID,
+) -> "UserFollowedPredictor":  # type: ignore[name-defined]  # noqa: F821
+    from app.models.engagement import UserFollowedPredictor
+
+    entry = UserFollowedPredictor(user_id=user_id, predictor_id=predictor_id)
+    db_session.add(entry)
+    await db_session.flush()
+    return entry
+
+
+async def create_test_notification(
+    db_session: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    type: str = "prediction_outcome",
+    title: str = "Test notification",
+    message: str | None = "Test message body",
+    data: dict[str, str] | None = None,
+    is_read: bool = False,
+) -> "Notification":  # type: ignore[name-defined]  # noqa: F821
+    from app.models.notification import Notification
+
+    notification = Notification(
+        id=uuid.uuid4(),
+        user_id=user_id,
+        type=type,
+        title=title,
+        message=message,
+        data=data or {},
+        is_read=is_read,
+    )
+    db_session.add(notification)
+    await db_session.flush()
+    return notification
+
+
 async def create_test_stock_daily_price(
     db_session: AsyncSession,
     *,

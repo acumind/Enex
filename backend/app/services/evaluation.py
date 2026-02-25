@@ -1,6 +1,7 @@
 """Evaluation service — core prediction outcome computation and scorecard generation."""
 
 import logging
+import uuid
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
@@ -26,21 +27,23 @@ class EvaluationService:
         self.scorecard_repo = ScorecardRepository(session)
         self.tolerance = Decimal(str(get_settings().OUTCOME_TOLERANCE_PCT / 100))
 
-    async def evaluate_pending_predictions(self, as_of_date: date | None = None) -> int:
-        """Evaluate all eligible predictions. Returns count evaluated."""
+    async def evaluate_pending_predictions(self, as_of_date: date | None = None) -> tuple[int, list[uuid.UUID]]:
+        """Evaluate all eligible predictions. Returns (count evaluated, list of prediction IDs)."""
         if as_of_date is None:
             as_of_date = date.today()
 
         predictions = await self.outcome_repo.find_ready_for_evaluation(as_of_date)
         evaluated = 0
+        evaluated_ids: list[uuid.UUID] = []
 
         for prediction in predictions:
             outcome = await self._evaluate_single(prediction, as_of_date)
             if outcome is not None:
                 await self.outcome_repo.create(outcome)
                 evaluated += 1
+                evaluated_ids.append(prediction.id)
 
-        return evaluated
+        return evaluated, evaluated_ids
 
     async def _evaluate_single(self, prediction: Prediction, eval_date: date) -> PredictionOutcome | None:
         """Evaluate a single prediction against actual prices."""
@@ -296,10 +299,11 @@ class EvaluationService:
 
     async def run_full_evaluation(self) -> EvaluationTriggerResponse:
         """Run full evaluation pipeline: evaluate predictions + update scorecards."""
-        evaluated = await self.evaluate_pending_predictions()
+        evaluated, evaluated_ids = await self.evaluate_pending_predictions()
         scorecards = await self.update_all_scorecards()
         return EvaluationTriggerResponse(
             message="Evaluation complete",
             predictions_evaluated=evaluated,
             scorecards_updated=scorecards,
+            evaluated_prediction_ids=[str(pid) for pid in evaluated_ids],
         )

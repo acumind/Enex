@@ -8,6 +8,8 @@ from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.prediction import Prediction
+from app.models.predictor import Predictor
+from app.models.stock import Stock
 from app.repositories.base import BaseRepository
 
 
@@ -114,6 +116,46 @@ class PredictionRepository(BaseRepository[Prediction]):
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def list_by_stock_enriched(
+        self,
+        stock_id: uuid.UUID,
+        *,
+        cursor: datetime | None = None,
+        limit: int = 20,
+    ) -> list[tuple[Prediction, str, str]]:
+        """List predictions for a stock, joined with predictor name and slug."""
+        stmt = (
+            select(Prediction, Predictor.name, Predictor.slug)
+            .join(Predictor, Prediction.predictor_id == Predictor.id)
+            .where(Prediction.stock_id == stock_id)
+            .order_by(Prediction.created_at.desc())
+        )
+        if cursor is not None:
+            stmt = stmt.where(Prediction.created_at < cursor)
+        stmt = stmt.limit(limit)
+        result = await self.session.execute(stmt)
+        return list(result.all())
+
+    async def list_by_predictor_enriched(
+        self,
+        predictor_id: uuid.UUID,
+        *,
+        cursor: datetime | None = None,
+        limit: int = 20,
+    ) -> list[tuple[Prediction, str, str]]:
+        """List predictions for a predictor, joined with stock symbol and name."""
+        stmt = (
+            select(Prediction, Stock.symbol, Stock.name)
+            .join(Stock, Prediction.stock_id == Stock.id)
+            .where(Prediction.predictor_id == predictor_id)
+            .order_by(Prediction.created_at.desc())
+        )
+        if cursor is not None:
+            stmt = stmt.where(Prediction.created_at < cursor)
+        stmt = stmt.limit(limit)
+        result = await self.session.execute(stmt)
+        return list(result.all())
 
     async def approve(self, prediction: Prediction, reviewer_id: uuid.UUID) -> Prediction:
         prediction.status = "approved"

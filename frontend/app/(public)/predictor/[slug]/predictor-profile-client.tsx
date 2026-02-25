@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { OutcomeBadge } from "@/components/outcome-badge";
 import { AccuracyBadge } from "@/components/accuracy-badge";
+import { FollowButton } from "@/components/follow-button";
 import { api } from "@/lib/api-client";
 import type {
   PaginatedResponse,
@@ -94,6 +95,7 @@ export function PredictorProfileClient({
           {predictor.is_verified && (
             <Badge variant="secondary">Verified</Badge>
           )}
+          <FollowButton predictorId={predictor.id} />
         </div>
         <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
           <Badge variant="outline" className="capitalize">
@@ -267,8 +269,19 @@ export function PredictorProfileClient({
                       <td className="px-4 py-3 text-muted-foreground">
                         {p.prediction_date}
                       </td>
-                      <td className="px-4 py-3 font-mono text-xs">
-                        {p.stock_id.slice(0, 8)}
+                      <td className="px-4 py-3 text-sm">
+                        {p.stock_symbol ? (
+                          <Link
+                            href={`/stock/${p.stock_symbol}`}
+                            className="font-mono text-primary underline-offset-4 hover:underline"
+                          >
+                            {p.stock_symbol}
+                          </Link>
+                        ) : (
+                          <span className="font-mono text-xs">
+                            {p.stock_id.slice(0, 8)}
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-right tabular-nums">
                         {parseFloat(p.target_price).toLocaleString("en-IN")}

@@ -99,6 +99,15 @@ class PredictionService:
             raise BusinessRuleViolation(f"Cannot approve prediction with status '{prediction.status}'")
 
         prediction = await self.pred_repo.approve(prediction, reviewer_id)
+
+        # Dispatch notification for followers of this predictor
+        try:
+            from app.jobs.notifications import dispatch_new_prediction_notifications_task
+
+            dispatch_new_prediction_notifications_task.delay(str(prediction.id))
+        except Exception:
+            logger.warning("Failed to dispatch new prediction notification for %s", prediction.id)
+
         return PredictionResponse.model_validate(prediction)
 
     async def reject(self, prediction_id: uuid.UUID, reviewer_id: uuid.UUID) -> PredictionResponse:
@@ -171,6 +180,50 @@ class PredictionService:
             predictions = predictions[:limit]
 
         items = [PredictionResponse.model_validate(p) for p in predictions]
+        next_cursor = items[-1].created_at if has_more and items else None
+        return PaginatedResponse[PredictionResponse](items=items, next_cursor=next_cursor, has_more=has_more)
+
+    async def list_by_stock_enriched(
+        self,
+        stock_id: uuid.UUID,
+        *,
+        cursor: datetime | None = None,
+        limit: int = 20,
+    ) -> PaginatedResponse[PredictionResponse]:
+        rows = await self.pred_repo.list_by_stock_enriched(stock_id, cursor=cursor, limit=limit + 1)
+        has_more = len(rows) > limit
+        if has_more:
+            rows = rows[:limit]
+
+        items = []
+        for prediction, predictor_name, predictor_slug in rows:
+            resp = PredictionResponse.model_validate(prediction)
+            resp.predictor_name = predictor_name
+            resp.predictor_slug = predictor_slug
+            items.append(resp)
+
+        next_cursor = items[-1].created_at if has_more and items else None
+        return PaginatedResponse[PredictionResponse](items=items, next_cursor=next_cursor, has_more=has_more)
+
+    async def list_by_predictor_enriched(
+        self,
+        predictor_id: uuid.UUID,
+        *,
+        cursor: datetime | None = None,
+        limit: int = 20,
+    ) -> PaginatedResponse[PredictionResponse]:
+        rows = await self.pred_repo.list_by_predictor_enriched(predictor_id, cursor=cursor, limit=limit + 1)
+        has_more = len(rows) > limit
+        if has_more:
+            rows = rows[:limit]
+
+        items = []
+        for prediction, stock_symbol, stock_name in rows:
+            resp = PredictionResponse.model_validate(prediction)
+            resp.stock_symbol = stock_symbol
+            resp.stock_name = stock_name
+            items.append(resp)
+
         next_cursor = items[-1].created_at if has_more and items else None
         return PaginatedResponse[PredictionResponse](items=items, next_cursor=next_cursor, has_more=has_more)
 

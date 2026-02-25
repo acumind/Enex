@@ -61,3 +61,4 @@ class EvaluationTriggerResponse(BaseModel):
     message: str
     predictions_evaluated: int
     scorecards_updated: int
+    evaluated_prediction_ids: list[str] = []

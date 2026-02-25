@@ -99,7 +99,7 @@ class PredictorService:
         cursor: datetime | None = None,
         limit: int = 20,
     ) -> PaginatedResponse:  # type: ignore[type-arg]
-        """Get predictions for a predictor. Delegates to PredictionRepository."""
+        """Get enriched predictions for a predictor (with stock symbol/name)."""
         from app.repositories.prediction import PredictionRepository
         from app.schemas.prediction import PredictionResponse
 
@@ -108,11 +108,17 @@ class PredictorService:
             raise NotFoundError("Predictor not found")
 
         pred_repo = PredictionRepository(self.repo.session)
-        predictions = await pred_repo.list_by_predictor(predictor.id, cursor=cursor, limit=limit + 1)
-        has_more = len(predictions) > limit
+        rows = await pred_repo.list_by_predictor_enriched(predictor.id, cursor=cursor, limit=limit + 1)
+        has_more = len(rows) > limit
         if has_more:
-            predictions = predictions[:limit]
+            rows = rows[:limit]
 
-        items = [PredictionResponse.model_validate(p) for p in predictions]
+        items = []
+        for prediction, stock_symbol, stock_name in rows:
+            resp = PredictionResponse.model_validate(prediction)
+            resp.stock_symbol = stock_symbol
+            resp.stock_name = stock_name
+            items.append(resp)
+
         next_cursor = items[-1].created_at if has_more and items else None
         return PaginatedResponse(items=items, next_cursor=next_cursor, has_more=has_more)

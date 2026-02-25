@@ -46,3 +46,35 @@ class ResendAdapter:
         except httpx.HTTPError:
             logger.exception("Failed to send email via Resend")
             return False
+
+    async def send_notification(self, to: str, subject: str, html_body: str) -> bool:
+        settings = get_settings()
+        if not settings.RESEND_API_KEY:
+            logger.warning("RESEND_API_KEY not configured, skipping notification email")
+            return False
+
+        payload = {
+            "from": settings.RESEND_FROM_EMAIL,
+            "to": [to],
+            "subject": subject,
+            "html": html_body,
+        }
+
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    RESEND_API_URL,
+                    json=payload,
+                    headers={
+                        "Authorization": f"Bearer {settings.RESEND_API_KEY}",
+                        "Content-Type": "application/json",
+                    },
+                    timeout=10.0,
+                )
+                if resp.status_code >= 400:
+                    logger.error("Resend API error: %s %s", resp.status_code, resp.text)
+                    return False
+                return True
+        except httpx.HTTPError:
+            logger.exception("Failed to send notification email via Resend")
+            return False

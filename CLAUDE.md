@@ -32,14 +32,9 @@ Analyst Prediction Tracker for Indian equity markets. Tracks stock price target 
 - Unified `predictors` table for all types (individual, brokerage, research_firm, media_house, influencer)
 
 ## Current status
-- All planning docs complete and reviewed
-- README, .env.example files, and .gitignore created
-- **Next step: Sprint 0 — Project scaffolding**
-  - Backend: FastAPI + uv + Alembic + project structure
-  - Frontend: Next.js + TypeScript + Shadcn/ui setup
-  - Docker Compose for local dev (PostgreSQL + Redis)
-  - Health check endpoint
-  - CI pipeline stub
+- **Sprints 0–6 complete** (scaffolding, core data, prediction entry, auth, evaluation, public pages, engagement & polish)
+- 385 backend tests passing, frontend lint/tsc/build clean
+- **Next step: Sprint 7+ — OpenGraph images, email notifications, further polish**
 
 ## Git
 - Main branch: `main`

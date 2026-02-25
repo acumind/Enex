@@ -8,14 +8,23 @@ from app.jobs.celery_app import celery_app
 logger = logging.getLogger(__name__)
 
 
-async def _run_evaluation() -> dict[str, int]:
+async def _run_evaluation() -> dict[str, object]:
     from app.core.database import async_session_factory
     from app.services.evaluation import EvaluationService
 
     async with async_session_factory() as session:
         service = EvaluationService(session)
-        evaluated = await service.evaluate_pending_predictions()
+        evaluated, evaluated_ids = await service.evaluate_pending_predictions()
         await session.commit()
+
+    # Dispatch notification task for evaluated predictions
+    if evaluated_ids:
+        try:
+            from app.jobs.notifications import dispatch_outcome_notifications_task
+
+            dispatch_outcome_notifications_task.delay([str(pid) for pid in evaluated_ids])
+        except Exception:
+            logger.warning("Failed to dispatch outcome notifications task")
 
     return {"predictions_evaluated": evaluated}
 

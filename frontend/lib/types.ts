@@ -41,6 +41,11 @@ export interface PredictionResponse {
   created_at: string;
   updated_at: string;
   upside_pct: string;
+  // Optional enrichment fields
+  stock_symbol?: string | null;
+  stock_name?: string | null;
+  predictor_name?: string | null;
+  predictor_slug?: string | null;
 }
 
 export interface SuggestionResponse {
@@ -156,6 +161,51 @@ export interface SearchHit {
 export interface SearchResponse {
   predictors: SearchHit[];
   stocks: SearchHit[];
+}
+
+// --- Engagement types ---
+
+export interface WatchlistItemEnriched {
+  user_id: string;
+  stock_id: string;
+  created_at: string;
+  stock_symbol: string;
+  stock_name: string;
+  stock_sector: string | null;
+  stock_current_price: string | null;
+}
+
+export interface WatchlistCheckResponse {
+  watching: boolean;
+}
+
+export interface FollowItemEnriched {
+  user_id: string;
+  predictor_id: string;
+  created_at: string;
+  predictor_name: string;
+  predictor_slug: string;
+  predictor_type: string;
+  predictor_is_verified: boolean;
+}
+
+export interface FollowCheckResponse {
+  following: boolean;
+}
+
+export interface NotificationResponse {
+  id: string;
+  user_id: string;
+  type: string;
+  title: string;
+  message: string | null;
+  data: Record<string, string>;
+  is_read: boolean;
+  created_at: string;
+}
+
+export interface UnreadCountResponse {
+  count: number;
 }
 
 // --- Auth types ---

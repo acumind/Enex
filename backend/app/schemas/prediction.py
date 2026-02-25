@@ -47,6 +47,12 @@ class PredictionResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+    # Optional enrichment fields (populated by enriched queries)
+    stock_symbol: str | None = None
+    stock_name: str | None = None
+    predictor_name: str | None = None
+    predictor_slug: str | None = None
+
     @computed_field  # type: ignore[prop-decorator]
     @property
     def upside_pct(self) -> Decimal:

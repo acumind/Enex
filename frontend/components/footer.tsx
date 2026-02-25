@@ -16,6 +16,12 @@ export function Footer() {
             >
               Leaderboard
             </Link>
+            <Link
+              href="/about"
+              className="transition-colors hover:text-foreground"
+            >
+              About
+            </Link>
             <span>&copy; {new Date().getFullYear()} Enex</span>
           </div>
         </div>

@@ -20,7 +20,7 @@ async def test_run_evaluation_calls_service() -> None:
 
     mock_session = AsyncMock()
     mock_service = AsyncMock()
-    mock_service.evaluate_pending_predictions.return_value = 5
+    mock_service.evaluate_pending_predictions.return_value = (5, [])
 
     with (
         patch(_P_SESSION_FACTORY, return_value=_make_session_ctx(mock_session)),
