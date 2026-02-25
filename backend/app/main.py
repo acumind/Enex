@@ -11,6 +11,7 @@ from app.api.routes.health import router as health_router
 from app.api.routes.outcomes import router as outcomes_router
 from app.api.routes.predictions import router as predictions_router
 from app.api.routes.predictors import router as predictors_router
+from app.api.routes.search import router as search_router
 from app.api.routes.stocks import router as stocks_router
 from app.core.config import get_settings
 from app.core.database import engine
@@ -47,4 +48,5 @@ app.include_router(stocks_router, prefix="/api/v1")
 app.include_router(predictions_router, prefix="/api/v1")
 app.include_router(extract_router, prefix="/api/v1")
 app.include_router(outcomes_router, prefix="/api/v1")
+app.include_router(search_router, prefix="/api/v1")
 app.include_router(admin_router, prefix="/api/v1")

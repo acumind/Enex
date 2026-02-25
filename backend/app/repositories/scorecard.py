@@ -39,15 +39,25 @@ class ScorecardRepository:
         min_predictions: int = 10,
         limit: int = 50,
         offset: int = 0,
+        predictor_type: str | None = None,
+        sort_by: str = "accuracy",
     ) -> list[tuple[PredictorScorecard, Predictor]]:
-        """Get leaderboard: scorecards joined with predictor info, sorted by accuracy."""
+        """Get leaderboard: scorecards joined with predictor info, sorted by chosen field."""
         stmt = (
             select(PredictorScorecard, Predictor)
             .join(Predictor, PredictorScorecard.predictor_id == Predictor.id)
             .where(PredictorScorecard.total_predictions >= min_predictions)
-            .order_by(PredictorScorecard.accuracy_pct.desc().nullslast())
-            .offset(offset)
-            .limit(limit)
         )
+        if predictor_type is not None:
+            stmt = stmt.where(Predictor.type == predictor_type)
+
+        if sort_by == "total_predictions":
+            stmt = stmt.order_by(PredictorScorecard.total_predictions.desc())
+        elif sort_by == "streak_current":
+            stmt = stmt.order_by(PredictorScorecard.streak_current.desc())
+        else:
+            stmt = stmt.order_by(PredictorScorecard.accuracy_pct.desc().nullslast())
+
+        stmt = stmt.offset(offset).limit(limit)
         result = await self.session.execute(stmt)
         return list(result.all())

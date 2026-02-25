@@ -1,10 +1,127 @@
-export default function HomePage() {
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import { AccuracyBadge } from "@/components/accuracy-badge";
+import { PredictionCard } from "@/components/prediction-card";
+import type {
+  LeaderboardEntry,
+  PaginatedResponse,
+  PredictionResponse,
+} from "@/lib/types";
+
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+
+async function fetchJSON<T>(path: string): Promise<T | null> {
+  try {
+    const res = await fetch(`${API_BASE}${path}`, {
+      next: { revalidate: 60 },
+    });
+    if (!res.ok) return null;
+    return res.json();
+  } catch {
+    return null;
+  }
+}
+
+export default async function HomePage() {
+  const [predictions, leaderboard] = await Promise.all([
+    fetchJSON<PaginatedResponse<PredictionResponse>>(
+      "/predictions/recent?limit=6"
+    ),
+    fetchJSON<LeaderboardEntry[]>("/leaderboard?limit=5"),
+  ]);
+
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-24">
-      <h1 className="text-4xl font-bold">Enex</h1>
-      <p className="mt-4 text-lg text-muted-foreground">
-        Analyst Prediction Tracker for Indian Equity Markets
-      </p>
-    </main>
+    <div className="mx-auto max-w-6xl px-4 py-12">
+      {/* Hero */}
+      <section className="mb-16 text-center">
+        <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">
+          Analyst Prediction Tracker
+        </h1>
+        <p className="mx-auto mt-4 max-w-2xl text-lg text-muted-foreground">
+          Track stock price target predictions made by analysts, brokerages, and
+          media against actual outcomes. See who gets it right.
+        </p>
+        <div className="mt-6">
+          <Button asChild size="lg">
+            <Link href="/leaderboard">View Leaderboard</Link>
+          </Button>
+        </div>
+      </section>
+
+      {/* Recent Predictions */}
+      {predictions && predictions.items.length > 0 && (
+        <section className="mb-16">
+          <h2 className="mb-6 text-2xl font-semibold">Recent Predictions</h2>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {predictions.items.map((p) => (
+              <PredictionCard key={p.id} prediction={p} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Top 5 Leaderboard Preview */}
+      {leaderboard && leaderboard.length > 0 && (
+        <section>
+          <div className="mb-6 flex items-center justify-between">
+            <h2 className="text-2xl font-semibold">Top Analysts</h2>
+            <Link
+              href="/leaderboard"
+              className="text-sm text-muted-foreground hover:text-foreground"
+            >
+              View all &rarr;
+            </Link>
+          </div>
+          <div className="overflow-x-auto rounded-lg border">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-muted/50 text-left">
+                  <th className="px-4 py-3 font-medium">#</th>
+                  <th className="px-4 py-3 font-medium">Analyst</th>
+                  <th className="px-4 py-3 font-medium">Type</th>
+                  <th className="px-4 py-3 text-right font-medium">
+                    Accuracy
+                  </th>
+                  <th className="px-4 py-3 text-right font-medium">
+                    Predictions
+                  </th>
+                  <th className="px-4 py-3 text-right font-medium">Streak</th>
+                </tr>
+              </thead>
+              <tbody>
+                {leaderboard.map((entry, i) => (
+                  <tr key={entry.predictor_id} className="border-b last:border-0">
+                    <td className="px-4 py-3 text-muted-foreground">
+                      {i + 1}
+                    </td>
+                    <td className="px-4 py-3">
+                      <Link
+                        href={`/predictor/${entry.predictor_slug}`}
+                        className="font-medium hover:underline"
+                      >
+                        {entry.predictor_name}
+                      </Link>
+                    </td>
+                    <td className="px-4 py-3 capitalize text-muted-foreground">
+                      {entry.predictor_type.replace("_", " ")}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <AccuracyBadge value={entry.accuracy_pct} />
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums">
+                      {entry.total_predictions}
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums">
+                      {entry.streak_current}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+    </div>
   );
 }

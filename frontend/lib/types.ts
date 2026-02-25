@@ -65,6 +65,99 @@ export interface ApiError {
   detail: string;
 }
 
+// --- Public data types ---
+
+export interface PredictorResponse {
+  id: string;
+  name: string;
+  slug: string;
+  type: string;
+  parent_id: string | null;
+  designation: string | null;
+  bio: string | null;
+  avatar_url: string | null;
+  website: string | null;
+  social_links: Record<string, string>;
+  sebi_reg_no: string | null;
+  is_verified: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StockResponse {
+  id: string;
+  symbol: string;
+  name: string;
+  exchange: string;
+  bse_code: string | null;
+  sector: string | null;
+  industry: string | null;
+  market_cap: number | null;
+  current_price: string | null;
+  price_updated_at: string | null;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface LeaderboardEntry {
+  predictor_id: string;
+  predictor_name: string;
+  predictor_slug: string;
+  predictor_type: string;
+  total_predictions: number;
+  hits: number;
+  misses: number;
+  partial_hits: number;
+  accuracy_pct: string | null;
+  avg_deviation_pct: string | null;
+  streak_current: number;
+}
+
+export interface ScorecardResponse {
+  predictor_id: string;
+  total_predictions: number;
+  hits: number;
+  misses: number;
+  partial_hits: number;
+  pending: number;
+  accuracy_pct: string | null;
+  avg_deviation_pct: string | null;
+  avg_upside_predicted: string | null;
+  best_sector: string | null;
+  worst_sector: string | null;
+  sector_accuracy: Record<string, number>;
+  streak_current: number;
+  last_prediction_date: string | null;
+  last_updated: string;
+}
+
+export interface PredictionOutcomeResponse {
+  id: string;
+  prediction_id: string;
+  outcome_status: string;
+  actual_price: string | null;
+  highest_price: string | null;
+  lowest_price: string | null;
+  deviation_pct: string | null;
+  evaluated_at: string | null;
+  evaluation_date: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SearchHit {
+  id: string;
+  name: string;
+  slug_or_symbol: string;
+  type: "predictor" | "stock";
+  sub_type: string | null;
+}
+
+export interface SearchResponse {
+  predictors: SearchHit[];
+  stocks: SearchHit[];
+}
+
 // --- Auth types ---
 
 export interface AuthUser {

@@ -31,10 +31,18 @@ async def get_leaderboard(
     min_predictions: int = Query(10, ge=1),
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    predictor_type: str | None = Query(None),
+    sort_by: str = Query("accuracy"),
     service: EvaluationService = Depends(get_evaluation_service),
 ) -> list[LeaderboardEntry]:
     scorecard_repo = ScorecardRepository(service.session)
-    rows = await scorecard_repo.get_leaderboard(min_predictions=min_predictions, limit=limit, offset=offset)
+    rows = await scorecard_repo.get_leaderboard(
+        min_predictions=min_predictions,
+        limit=limit,
+        offset=offset,
+        predictor_type=predictor_type,
+        sort_by=sort_by,
+    )
     return [
         LeaderboardEntry(
             predictor_id=scorecard.predictor_id,

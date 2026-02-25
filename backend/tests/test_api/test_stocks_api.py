@@ -5,6 +5,40 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from tests.conftest import create_test_stock
 
+# --- GET /stocks (listing) ---
+
+
+async def test_list_stocks_empty(client: AsyncClient) -> None:
+    resp = await client.get("/api/v1/stocks")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["items"] == []
+    assert data["has_more"] is False
+
+
+async def test_list_stocks_returns_active(client: AsyncClient, db_session: AsyncSession) -> None:
+    await create_test_stock(db_session, symbol="TCS", name="TCS Ltd", sector="Technology")
+    await create_test_stock(db_session, symbol="INFY", name="Infosys Ltd", sector="Technology")
+
+    resp = await client.get("/api/v1/stocks")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["items"]) == 2
+
+
+async def test_list_stocks_filter_by_sector(client: AsyncClient, db_session: AsyncSession) -> None:
+    await create_test_stock(db_session, symbol="TCS2", name="TCS Ltd", sector="Technology")
+    await create_test_stock(db_session, symbol="HDFC2", name="HDFC Bank", sector="Banking")
+
+    resp = await client.get("/api/v1/stocks?sector=Banking")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["items"]) == 1
+    assert data["items"][0]["sector"] == "Banking"
+
+
+# --- GET /stocks/{symbol} ---
+
 
 async def test_get_stock_by_symbol(client: AsyncClient, db_session: AsyncSession) -> None:
     await create_test_stock(db_session, symbol="RELIANCE", name="Reliance Industries")

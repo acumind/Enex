@@ -49,6 +49,22 @@ class StockService:
             raise NotFoundError(f"Stock {symbol} not found")
         return StockResponse.model_validate(stock)
 
+    async def list_with_filters(
+        self,
+        *,
+        sector: str | None = None,
+        cursor: datetime | None = None,
+        limit: int = 20,
+    ) -> PaginatedResponse[StockResponse]:
+        stocks = await self.repo.list_with_filters(sector=sector, cursor=cursor, limit=limit + 1)
+        has_more = len(stocks) > limit
+        if has_more:
+            stocks = stocks[:limit]
+
+        items = [StockResponse.model_validate(s) for s in stocks]
+        next_cursor = items[-1].created_at if has_more and items else None
+        return PaginatedResponse[StockResponse](items=items, next_cursor=next_cursor, has_more=has_more)
+
     async def list_active(
         self,
         *,

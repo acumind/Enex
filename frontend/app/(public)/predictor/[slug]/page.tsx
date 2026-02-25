@@ -1,13 +1,61 @@
+import type { Metadata } from "next";
+import { notFound } from "next/navigation";
+import type { PredictorResponse, ScorecardResponse } from "@/lib/types";
+import { PredictorProfileClient } from "./predictor-profile-client";
+
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+
+async function fetchJSON<T>(path: string): Promise<T | null> {
+  try {
+    const res = await fetch(`${API_BASE}${path}`, {
+      next: { revalidate: 60 },
+    });
+    if (!res.ok) return null;
+    return res.json();
+  } catch {
+    return null;
+  }
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}): Promise<Metadata> {
+  const { slug } = await params;
+  const predictor = await fetchJSON<PredictorResponse>(
+    `/predictors/${slug}`
+  );
+  if (!predictor) return { title: "Predictor — Enex" };
+  return {
+    title: `${predictor.name} — Enex`,
+    description: `${predictor.name} prediction accuracy, scorecard, and history on Enex.`,
+  };
+}
+
 export default async function PredictorProfilePage({
   params,
 }: {
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
+  const predictor = await fetchJSON<PredictorResponse>(
+    `/predictors/${slug}`
+  );
+  if (!predictor) notFound();
+
+  const scorecard = await fetchJSON<ScorecardResponse>(
+    `/scorecards/${predictor.id}`
+  );
+
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-24">
-      <h1 className="text-3xl font-bold">Predictor Profile</h1>
-      <p className="mt-4 text-muted-foreground">Viewing: {slug}</p>
-    </main>
+    <div className="mx-auto max-w-6xl px-4 py-8">
+      <PredictorProfileClient
+        predictor={predictor}
+        scorecard={scorecard}
+        slug={slug}
+      />
+    </div>
   );
 }

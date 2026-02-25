@@ -107,6 +107,77 @@ async def test_get_leaderboard_min_predictions_filter(client: AsyncClient, db_se
     assert resp.json() == []
 
 
+async def test_get_leaderboard_filter_by_predictor_type(client: AsyncClient, db_session: AsyncSession) -> None:
+    from app.repositories.scorecard import ScorecardRepository
+
+    ind = await create_test_predictor(db_session, name="Individual Analyst", predictor_type="individual")
+    brk = await create_test_predictor(db_session, name="Big Brokerage", predictor_type="brokerage")
+    repo = ScorecardRepository(db_session)
+    for p in [ind, brk]:
+        await repo.upsert(
+            {
+                "predictor_id": p.id,
+                "total_predictions": 20,
+                "hits": 15,
+                "misses": 3,
+                "partial_hits": 2,
+                "pending": 0,
+                "accuracy_pct": Decimal("80.00"),
+                "sector_accuracy": {},
+                "streak_current": 5,
+                "last_updated": datetime(2025, 6, 1),
+            }
+        )
+
+    resp = await client.get("/api/v1/leaderboard?predictor_type=individual")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 1
+    assert data[0]["predictor_type"] == "individual"
+
+
+async def test_get_leaderboard_sort_by_total_predictions(client: AsyncClient, db_session: AsyncSession) -> None:
+    from app.repositories.scorecard import ScorecardRepository
+
+    p1 = await create_test_predictor(db_session, name="Few Preds")
+    p2 = await create_test_predictor(db_session, name="Many Preds")
+    repo = ScorecardRepository(db_session)
+    await repo.upsert(
+        {
+            "predictor_id": p1.id,
+            "total_predictions": 15,
+            "hits": 10,
+            "misses": 3,
+            "partial_hits": 2,
+            "pending": 0,
+            "accuracy_pct": Decimal("90.00"),
+            "sector_accuracy": {},
+            "streak_current": 3,
+            "last_updated": datetime(2025, 6, 1),
+        }
+    )
+    await repo.upsert(
+        {
+            "predictor_id": p2.id,
+            "total_predictions": 50,
+            "hits": 30,
+            "misses": 10,
+            "partial_hits": 10,
+            "pending": 0,
+            "accuracy_pct": Decimal("70.00"),
+            "sector_accuracy": {},
+            "streak_current": 1,
+            "last_updated": datetime(2025, 6, 1),
+        }
+    )
+
+    resp = await client.get("/api/v1/leaderboard?sort_by=total_predictions")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 2
+    assert data[0]["predictor_name"] == "Many Preds"
+
+
 # --- GET /scorecards/{predictor_id} ---
 
 

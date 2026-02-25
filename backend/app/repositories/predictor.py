@@ -36,6 +36,17 @@ class PredictorRepository(BaseRepository[Predictor]):
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def search(self, query: str, *, limit: int = 10) -> list[Predictor]:
+        pattern = f"%{query}%"
+        stmt = (
+            select(Predictor)
+            .where((Predictor.name.ilike(pattern)) | (Predictor.slug.ilike(pattern)))
+            .order_by(Predictor.name)
+            .limit(limit)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
     async def list_members(self, parent_id: uuid.UUID) -> list[Predictor]:
         result = await self.session.execute(
             select(Predictor).where(Predictor.parent_id == parent_id).order_by(Predictor.name)

@@ -14,6 +14,16 @@ from app.services.stock import StockService
 router = APIRouter(prefix="/stocks", tags=["stocks"])
 
 
+@router.get("", response_model=PaginatedResponse[StockResponse])
+async def list_stocks(
+    sector: str | None = Query(None),
+    cursor: datetime | None = Query(None),
+    limit: int = Query(20, ge=1, le=100),
+    service: StockService = Depends(get_stock_service),
+) -> PaginatedResponse[StockResponse]:
+    return await service.list_with_filters(sector=sector, cursor=cursor, limit=limit)
+
+
 @router.get("/{symbol}", response_model=StockResponse)
 async def get_stock(
     symbol: str,

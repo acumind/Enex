@@ -18,6 +18,17 @@ class StockRepository(BaseRepository[Stock]):
         result = await self.session.execute(select(Stock).where(Stock.symbol == symbol))
         return result.scalar_one_or_none()
 
+    async def search(self, query: str, *, limit: int = 10) -> list[Stock]:
+        pattern = f"%{query}%"
+        stmt = (
+            select(Stock)
+            .where((Stock.name.ilike(pattern)) | (Stock.symbol.ilike(pattern)))
+            .order_by(Stock.name)
+            .limit(limit)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
     async def bulk_create(self, stocks_data: list[dict[str, object]]) -> int:
         """Insert stocks, skipping duplicates on symbol conflict. Returns rows inserted."""
         if not stocks_data:
@@ -26,6 +37,22 @@ class StockRepository(BaseRepository[Stock]):
         result = await self.session.execute(stmt)
         await self.session.flush()
         return int(result.rowcount)  # type: ignore[attr-defined]
+
+    async def list_with_filters(
+        self,
+        *,
+        sector: str | None = None,
+        cursor: datetime | None = None,
+        limit: int = 20,
+    ) -> list[Stock]:
+        stmt = select(Stock).where(Stock.is_active.is_(True)).order_by(Stock.created_at.desc())
+        if sector is not None:
+            stmt = stmt.where(Stock.sector.ilike(f"%{sector}%"))
+        if cursor is not None:
+            stmt = stmt.where(Stock.created_at < cursor)
+        stmt = stmt.limit(limit)
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
 
     async def list_active(
         self,
