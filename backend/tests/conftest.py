@@ -4,6 +4,7 @@ import uuid
 from collections.abc import AsyncGenerator
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -36,7 +37,7 @@ def _setup_db() -> None:
 
 
 @pytest.fixture
-async def db_session() -> AsyncGenerator[AsyncSession, None]:
+async def db_session(_disable_redis_cache) -> AsyncGenerator[AsyncSession, None]:
     """Per-test session wrapped in a transaction that rolls back after each test."""
     engine = create_async_engine(_test_async_url, echo=False)
     async with engine.connect() as conn:
@@ -61,6 +62,23 @@ async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         yield ac
     app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def _disable_redis_cache():
+    """Disable Redis caching to prevent cross-test pollution.
+
+    Applied via db_session and client fixtures so cache unit tests are unaffected.
+    """
+    with (
+        patch("app.core.cache.cache_get", new_callable=AsyncMock, return_value=None),
+        patch("app.core.cache.cache_set", new_callable=AsyncMock),
+        patch("app.api.routes.outcomes.cache_get", new_callable=AsyncMock, return_value=None),
+        patch("app.api.routes.outcomes.cache_set", new_callable=AsyncMock),
+        patch("app.api.routes.search.cache_get", new_callable=AsyncMock, return_value=None),
+        patch("app.api.routes.search.cache_set", new_callable=AsyncMock),
+    ):
+        yield
 
 
 # ---------------------------------------------------------------------------
