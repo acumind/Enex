@@ -2,7 +2,7 @@
 
 > Living document tracking sprint-wise completion, observations, and guidance for future implementation.
 >
-> Last updated: 2026-02-26
+> Last updated: 2026-02-25
 
 ---
 
@@ -646,6 +646,32 @@ The React strict mode linter flags `setState` inside `useEffect`. Using `useSync
 ### 6. Notification bell uses polling (not WebSocket)
 
 The bell polls `GET /notifications/unread-count` every 30 seconds. This is simpler than WebSocket/SSE and sufficient for MVP. A WebSocket upgrade can be done post-launch if needed.
+
+---
+
+## Post-Sprint Fixes (Completed)
+
+Gap items resolved after Sprint 6 completion.
+
+### Tasks Completed
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 1 | `upside_pct` generated column | Done | PostgreSQL `GENERATED ALWAYS AS` stored column; Alembic migration `67fa22f6433e`; replaced Pydantic `@computed_field` with DB-level computation; simplified evaluation service `avg_upside` query |
+| 2 | Security headers middleware | Done | `SecurityHeadersMiddleware` in `main.py` — CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy; HSTS only in production; CSP `connect-src` dynamically built from CORS origins |
+| 3 | Celery worker deployment (verified) | Done | `celery-worker` and `celery-beat` services already existed in `docker-compose.yml` since Sprint 0 — gap was stale |
+
+### Test Summary
+
+- **387 total tests** (385 + 2 new security header tests), all passing
+- **Ruff**: clean
+- **Frontend**: lint clean, tsc clean, build clean (21 routes)
+
+### Files Changed
+
+**New:** `migrations/versions/67fa22f6433e_add_upside_pct_generated_column_to_.py`
+
+**Modified:** `app/models/prediction.py` (added `Computed` column), `app/schemas/prediction.py` (removed `@computed_field`, added regular field), `app/services/evaluation.py` (simplified avg_upside query), `app/main.py` (added `SecurityHeadersMiddleware`), `tests/test_health.py` (2 new tests)
 
 ---
 
