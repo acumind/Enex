@@ -1003,12 +1003,12 @@ app/
 | ~~Celery app setup~~ | ~~2~~ | **Done** | Created in Sprint 2 (`app/jobs/celery_app.py`) |
 | OpenAPI client generation | 6+ | Open | Use `openapi-typescript-fetch` to generate typed frontend API client from backend spec |
 | Database user separation | Production | Open | Use `enex_app` (DML only) for runtime, `enex_migrations` (DDL) for Alembic |
-| Content Security Policy headers | 6+ | Open | Add via FastAPI middleware per SECURITY.md |
+| ~~Content Security Policy headers~~ | ~~6+~~ | **Done** | `SecurityHeadersMiddleware` in `main.py` — CSP, X-Frame-Options, HSTS (prod only), Permissions-Policy |
 | Load testing | Post-MVP | Open | Use `locust` or `k6` before public launch |
 | ~~`nsetools` as yfinance fallback~~ | ~~4~~ | **Deferred** | yfinance adapter implemented with `.NS` suffix handling; `nsetools` can be added as a fallback later if needed |
 | ~~Pre-commit config~~ | ~~Next sprint~~ | **Done** | `.pre-commit-config.yaml` exists with local ruff hooks |
 | ~~Frontend auth middleware~~ | ~~3~~ | **Done** | Middleware.ts redirects protected paths to login when no refresh_token cookie |
-| Celery worker deployment | 3+ | Open | Worker uses same image with different entrypoint — Docker Compose service not yet added |
+| ~~Celery worker deployment~~ | ~~3+~~ | **Done** | `celery-worker` and `celery-beat` services already in `docker-compose.yml` since Sprint 0 |
 | Next.js middleware → proxy migration | 6+ | Open | Next.js 16 deprecates `middleware.ts` in favor of `proxy` convention |
 | ~~Prediction table enrichment~~ | ~~6~~ | **Done** | Enriched queries with JOINs, linked names in frontend |
 | Sitemap dedicated listing endpoint | 6+ | Open | Current sitemap uses search API with `%` pattern; add dedicated endpoint if entity count grows |

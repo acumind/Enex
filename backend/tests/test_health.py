@@ -43,3 +43,20 @@ async def test_health_degraded_when_db_down(client: AsyncClient) -> None:
     data = response.json()
     assert data["status"] == "degraded"
     assert data["db"] == "error"
+
+
+async def test_security_headers_present(client: AsyncClient) -> None:
+    """All security headers from SECURITY.md §8 are set on every response."""
+    response = await client.get("/api/v1/health")
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+    assert response.headers["X-Frame-Options"] == "DENY"
+    assert response.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
+    assert "geolocation=()" in response.headers["Permissions-Policy"]
+    assert "default-src 'self'" in response.headers["Content-Security-Policy"]
+    assert "frame-ancestors 'none'" in response.headers["Content-Security-Policy"]
+
+
+async def test_hsts_only_in_production(client: AsyncClient) -> None:
+    """HSTS header should NOT be present in non-production environments."""
+    response = await client.get("/api/v1/health")
+    assert "Strict-Transport-Security" not in response.headers
