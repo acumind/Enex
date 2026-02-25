@@ -2,7 +2,7 @@
 
 > Living document tracking sprint-wise completion, observations, and guidance for future implementation.
 >
-> Last updated: 2026-02-25
+> Last updated: 2026-02-26
 
 ---
 
@@ -1017,6 +1017,66 @@ app/
   (user)/      → Authenticated user pages (dashboard, watchlist, submissions)
   (admin)/     → Admin/moderator pages (review queue, user management)
 ```
+
+---
+
+## Sprint 7: Hardening, Caching & Platform Polish (Completed)
+
+### Objective
+
+Address remaining pre-MVP gaps: public IP rate limiting, platform stats API, Redis response caching, landing page enhancement, and test coverage for untested code paths.
+
+### Tasks Completed
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 1 | Public IP-based rate limiting | Done | `ip_dependency()` on `RateLimiter`, `public_ip_limiter` (100 req/IP/min), applied to all public GET routes |
+| 2 | Platform stats API (`GET /stats`) | Done | Schema + service + route; counts approved predictions, distinct predictors/stocks, avg accuracy (≥10 preds), total evaluated |
+| 3 | Redis response caching utility | Done | `cache_get`/`cache_set` + `@cached_response` decorator; applied to stats (5min), leaderboard (2min), search (1min) |
+| 4 | Landing page enhancement | Done | Stats counters component, "How it works" 3-step section, improved hero copy, second CTA button |
+| 5 | Tests for untested code paths | Done | CLI command tests (4), MSG91 HTTPError test (1) |
+| 6 | Update TASK_SUMMARY.md | Done | This section |
+
+### New Files (9)
+
+| File | Purpose |
+|------|---------|
+| `backend/app/schemas/stats.py` | `PlatformStatsResponse` schema |
+| `backend/app/services/stats.py` | Stats aggregation service with `@cached_response` |
+| `backend/app/api/routes/stats.py` | `GET /stats` public endpoint |
+| `backend/app/core/cache.py` | Redis TTL caching utility + `@cached_response` decorator |
+| `frontend/components/stats-counters.tsx` | Stats counter cards (4-column grid) |
+| `backend/tests/test_core/test_cache.py` | Cache utility tests (7) |
+| `backend/tests/test_services/test_stats_service.py` | Stats service tests (6) |
+| `backend/tests/test_api/test_stats_api.py` | Stats API tests (2) |
+| `backend/tests/test_cli.py` | CLI command tests (4) |
+
+### Modified Files (12)
+
+| File | Change |
+|------|--------|
+| `backend/app/core/rate_limit.py` | Added `ip_dependency()`, `public_ip_limiter` |
+| `backend/app/main.py` | Registered `stats_router` |
+| `backend/app/api/routes/predictions.py` | Added IP rate limit to `GET /recent` |
+| `backend/app/api/routes/outcomes.py` | Added IP rate limit + leaderboard caching |
+| `backend/app/api/routes/predictors.py` | Added IP rate limit to all GET endpoints |
+| `backend/app/api/routes/stocks.py` | Added IP rate limit to all GET endpoints |
+| `backend/app/api/routes/search.py` | Added IP rate limit + search caching |
+| `backend/tests/test_core/test_rate_limit.py` | Added 5 IP dependency tests |
+| `backend/tests/test_integrations/test_msg91_adapter.py` | Added `httpx.HTTPError` test |
+| `frontend/lib/types.ts` | Added `PlatformStatsResponse` interface |
+| `frontend/app/page.tsx` | Stats counters + "How it works" + improved hero |
+| `docs/TASK_SUMMARY.md` | Sprint 7 section |
+
+### Test Summary
+
+25 new tests → ~412 total (387 existing + 25 new)
+
+### Observations
+
+- **Cache design**: TTL-only, no invalidation — simple and sufficient for MVP. Stats cached 5 min, leaderboard 2 min, search 1 min.
+- **IP extraction**: `X-Forwarded-For` first IP preferred (Azure Container Apps proxy), fallback to `request.client.host`, then `"unknown"`.
+- **Fail-open everywhere**: Both rate limiter and cache fail open on Redis errors — availability over strictness.
 
 ---
 

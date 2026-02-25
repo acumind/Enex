@@ -61,11 +61,31 @@ class RateLimiter:
 
         return _check_rate_limit
 
+    def ip_dependency(self) -> Callable[..., Coroutine[Any, Any, None]]:
+        """Return a FastAPI dependency that enforces this rate limit by client IP."""
+        limiter = self
+
+        async def _check_ip_rate_limit(request: Request) -> None:
+            # Prefer X-Forwarded-For first IP (Azure Container Apps proxy)
+            forwarded = request.headers.get("x-forwarded-for")
+            if forwarded:
+                ip = forwarded.split(",")[0].strip()
+            elif request.client:
+                ip = request.client.host
+            else:
+                ip = "unknown"
+            await limiter.check(ip)
+
+        return _check_ip_rate_limit
+
 
 # Pre-configured limiters
 extract_limiter = RateLimiter("extract", max_requests=10, window_seconds=3600)
 prediction_submit_limiter = RateLimiter("prediction_submit", max_requests=20, window_seconds=86400)
 bulk_extract_limiter = RateLimiter("bulk_extract", max_requests=5, window_seconds=3600)
+
+# Public IP-based limiter (100 req/IP/min per SECURITY.md)
+public_ip_limiter = RateLimiter("public_ip", max_requests=100, window_seconds=60)
 
 # Auth limiters (called explicitly, not as Depends, since user isn't authenticated yet)
 otp_send_limiter = RateLimiter("otp_send", max_requests=5, window_seconds=3600)

@@ -5,6 +5,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, Query
 
 from app.api.deps import get_predictor_service
+from app.core.rate_limit import public_ip_limiter
 from app.schemas.common import PaginatedResponse
 from app.schemas.prediction import PredictionResponse
 from app.schemas.predictor import PredictorResponse
@@ -16,6 +17,7 @@ router = APIRouter(prefix="/predictors", tags=["predictors"])
 @router.get("/{slug}", response_model=PredictorResponse)
 async def get_predictor(
     slug: str,
+    _rate_limit: None = Depends(public_ip_limiter.ip_dependency()),
     service: PredictorService = Depends(get_predictor_service),
 ) -> PredictorResponse:
     return await service.get_by_slug(slug)
@@ -26,6 +28,7 @@ async def get_predictor_predictions(
     slug: str,
     cursor: datetime | None = Query(None),
     limit: int = Query(20, ge=1, le=100),
+    _rate_limit: None = Depends(public_ip_limiter.ip_dependency()),
     service: PredictorService = Depends(get_predictor_service),
 ) -> PaginatedResponse[PredictionResponse]:
     return await service.get_predictions(slug, cursor=cursor, limit=limit)
@@ -34,6 +37,7 @@ async def get_predictor_predictions(
 @router.get("/{slug}/members", response_model=list[PredictorResponse])
 async def get_predictor_members(
     slug: str,
+    _rate_limit: None = Depends(public_ip_limiter.ip_dependency()),
     service: PredictorService = Depends(get_predictor_service),
 ) -> list[PredictorResponse]:
     return await service.list_members(slug)

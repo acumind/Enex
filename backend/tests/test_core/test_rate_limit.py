@@ -115,3 +115,82 @@ def test_preconfigured_limiters() -> None:
     assert bulk_extract_limiter.key_prefix == "bulk_extract"
     assert bulk_extract_limiter.max_requests == 5
     assert bulk_extract_limiter.window_seconds == 3600
+
+
+# ---------------------------------------------------------------------------
+# ip_dependency() tests
+# ---------------------------------------------------------------------------
+
+
+async def test_ip_dependency_extracts_from_client_host() -> None:
+    """Uses request.client.host when no X-Forwarded-For header."""
+    limiter = RateLimiter("test_ip", max_requests=100, window_seconds=60)
+    dep = limiter.ip_dependency()
+
+    mock_redis, _ = _mock_redis(pipe_execute_return=[1])
+    request = MagicMock()
+    request.headers = {}
+    request.client = MagicMock()
+    request.client.host = "192.168.1.10"
+
+    with patch("redis.asyncio.from_url", return_value=mock_redis):
+        await dep(request)
+
+
+async def test_ip_dependency_prefers_x_forwarded_for() -> None:
+    """Prefers X-Forwarded-For first IP over request.client.host."""
+    limiter = RateLimiter("test_ip", max_requests=100, window_seconds=60)
+    dep = limiter.ip_dependency()
+
+    mock_redis, mock_pipe = _mock_redis(pipe_execute_return=[1])
+    request = MagicMock()
+    request.headers = {"x-forwarded-for": "10.0.0.1"}
+    request.client = MagicMock()
+    request.client.host = "192.168.1.10"
+
+    with patch("redis.asyncio.from_url", return_value=mock_redis):
+        await dep(request)
+
+    mock_pipe.incr.assert_awaited_once_with("rate_limit:test_ip:10.0.0.1")
+
+
+async def test_ip_dependency_handles_multiple_forwarded_ips() -> None:
+    """Uses first IP from comma-separated X-Forwarded-For."""
+    limiter = RateLimiter("test_ip", max_requests=100, window_seconds=60)
+    dep = limiter.ip_dependency()
+
+    mock_redis, mock_pipe = _mock_redis(pipe_execute_return=[1])
+    request = MagicMock()
+    request.headers = {"x-forwarded-for": "203.0.113.5, 70.41.3.18, 150.172.238.178"}
+    request.client = MagicMock()
+    request.client.host = "127.0.0.1"
+
+    with patch("redis.asyncio.from_url", return_value=mock_redis):
+        await dep(request)
+
+    mock_pipe.incr.assert_awaited_once_with("rate_limit:test_ip:203.0.113.5")
+
+
+async def test_ip_dependency_handles_missing_client() -> None:
+    """Falls back to 'unknown' when request.client is None."""
+    limiter = RateLimiter("test_ip", max_requests=100, window_seconds=60)
+    dep = limiter.ip_dependency()
+
+    mock_redis, mock_pipe = _mock_redis(pipe_execute_return=[1])
+    request = MagicMock()
+    request.headers = {}
+    request.client = None
+
+    with patch("redis.asyncio.from_url", return_value=mock_redis):
+        await dep(request)
+
+    mock_pipe.incr.assert_awaited_once_with("rate_limit:test_ip:unknown")
+
+
+def test_public_ip_limiter_config() -> None:
+    """Verify public_ip_limiter has correct configuration per SECURITY.md."""
+    from app.core.rate_limit import public_ip_limiter
+
+    assert public_ip_limiter.key_prefix == "public_ip"
+    assert public_ip_limiter.max_requests == 100
+    assert public_ip_limiter.window_seconds == 60

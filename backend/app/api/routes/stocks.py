@@ -5,6 +5,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, Query
 
 from app.api.deps import get_prediction_service, get_stock_service
+from app.core.rate_limit import public_ip_limiter
 from app.schemas.common import PaginatedResponse
 from app.schemas.prediction import PredictionResponse
 from app.schemas.stock import StockResponse
@@ -19,6 +20,7 @@ async def list_stocks(
     sector: str | None = Query(None),
     cursor: datetime | None = Query(None),
     limit: int = Query(20, ge=1, le=100),
+    _rate_limit: None = Depends(public_ip_limiter.ip_dependency()),
     service: StockService = Depends(get_stock_service),
 ) -> PaginatedResponse[StockResponse]:
     return await service.list_with_filters(sector=sector, cursor=cursor, limit=limit)
@@ -27,6 +29,7 @@ async def list_stocks(
 @router.get("/{symbol}", response_model=StockResponse)
 async def get_stock(
     symbol: str,
+    _rate_limit: None = Depends(public_ip_limiter.ip_dependency()),
     service: StockService = Depends(get_stock_service),
 ) -> StockResponse:
     return await service.get_by_symbol(symbol)
@@ -37,6 +40,7 @@ async def get_stock_predictions(
     symbol: str,
     cursor: datetime | None = Query(None),
     limit: int = Query(20, ge=1, le=100),
+    _rate_limit: None = Depends(public_ip_limiter.ip_dependency()),
     stock_service: StockService = Depends(get_stock_service),
     prediction_service: PredictionService = Depends(get_prediction_service),
 ) -> PaginatedResponse[PredictionResponse]:

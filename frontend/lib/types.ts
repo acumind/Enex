@@ -150,6 +150,14 @@ export interface PredictionOutcomeResponse {
   updated_at: string;
 }
 
+export interface PlatformStatsResponse {
+  total_predictions: number;
+  total_predictors: number;
+  total_stocks: number;
+  avg_accuracy_pct: string | null;
+  total_evaluated: number;
+}
+
 export interface SearchHit {
   id: string;
   name: string;

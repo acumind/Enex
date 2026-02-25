@@ -2,9 +2,11 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { AccuracyBadge } from "@/components/accuracy-badge";
 import { PredictionCard } from "@/components/prediction-card";
+import { StatsCounters } from "@/components/stats-counters";
 import type {
   LeaderboardEntry,
   PaginatedResponse,
+  PlatformStatsResponse,
   PredictionResponse,
 } from "@/lib/types";
 
@@ -24,11 +26,12 @@ async function fetchJSON<T>(path: string): Promise<T | null> {
 }
 
 export default async function HomePage() {
-  const [predictions, leaderboard] = await Promise.all([
+  const [predictions, leaderboard, stats] = await Promise.all([
     fetchJSON<PaginatedResponse<PredictionResponse>>(
       "/predictions/recent?limit=6"
     ),
     fetchJSON<LeaderboardEntry[]>("/leaderboard?limit=5"),
+    fetchJSON<PlatformStatsResponse>("/stats"),
   ]);
 
   return (
@@ -36,18 +39,29 @@ export default async function HomePage() {
       {/* Hero */}
       <section className="mb-16 text-center">
         <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">
-          Analyst Prediction Tracker
+          Who Really Gets the Market Right?
         </h1>
         <p className="mx-auto mt-4 max-w-2xl text-lg text-muted-foreground">
-          Track stock price target predictions made by analysts, brokerages, and
-          media against actual outcomes. See who gets it right.
+          We track stock price predictions from analysts, brokerages, and media
+          houses across Indian markets &mdash; then score them against real
+          outcomes. Transparent, data-driven accountability.
         </p>
-        <div className="mt-6">
+        <div className="mt-6 flex items-center justify-center gap-3">
           <Button asChild size="lg">
             <Link href="/leaderboard">View Leaderboard</Link>
           </Button>
+          <Button asChild size="lg" variant="outline">
+            <Link href="/predictions">Browse Predictions</Link>
+          </Button>
         </div>
       </section>
+
+      {/* Stats Counters */}
+      {stats && (
+        <section className="mb-16">
+          <StatsCounters stats={stats} />
+        </section>
+      )}
 
       {/* Recent Predictions */}
       {predictions && predictions.items.length > 0 && (
@@ -60,6 +74,45 @@ export default async function HomePage() {
           </div>
         </section>
       )}
+
+      {/* How It Works */}
+      <section className="mb-16">
+        <h2 className="mb-8 text-center text-2xl font-semibold">
+          How It Works
+        </h2>
+        <div className="grid gap-8 sm:grid-cols-3">
+          <div className="text-center">
+            <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground font-bold">
+              1
+            </div>
+            <h3 className="mb-1 font-semibold">Predictions Are Logged</h3>
+            <p className="text-sm text-muted-foreground">
+              When an analyst or media house publishes a stock price target, we
+              capture it with a source link and timestamp.
+            </p>
+          </div>
+          <div className="text-center">
+            <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground font-bold">
+              2
+            </div>
+            <h3 className="mb-1 font-semibold">Markets Do Their Thing</h3>
+            <p className="text-sm text-muted-foreground">
+              We wait for the target date or evaluation window to pass, then
+              compare the predicted price against actual market data.
+            </p>
+          </div>
+          <div className="text-center">
+            <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground font-bold">
+              3
+            </div>
+            <h3 className="mb-1 font-semibold">Accuracy Is Scored</h3>
+            <p className="text-sm text-muted-foreground">
+              Each prediction is marked as a hit, miss, or partial hit.
+              Analysts are ranked on a public leaderboard by accuracy.
+            </p>
+          </div>
+        </div>
+      </section>
 
       {/* Top 5 Leaderboard Preview */}
       {leaderboard && leaderboard.length > 0 && (
