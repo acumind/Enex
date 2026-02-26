@@ -1448,6 +1448,99 @@ The `search` parameter in `list_users()` applies `ilike` on both `User.email` an
 
 ---
 
+## Frontend Testing Framework Setup (Completed)
+
+### Objective
+
+Establish a multi-layer frontend testing framework before production launch: unit tests (Vitest), component tests (Vitest + RTL), integration tests (Vitest + RTL + mocked API/auth), and E2E scaffold (Playwright).
+
+### Tasks Completed
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 1 | Install test dependencies | Done | vitest, @testing-library/react, @testing-library/jest-dom, @testing-library/user-event, @vitejs/plugin-react, jsdom, @playwright/test + chromium |
+| 2 | Vitest configuration | Done | `vitest.config.ts` with React plugin, jsdom, `@` alias, CSS disabled; `test/setup.tsx` with jest-dom matchers, auto-cleanup, global mocks (next/navigation, next/link, window.matchMedia) |
+| 3 | Playwright configuration | Done | `playwright.config.ts` with chromium project, webServer on port 3000; `e2e/.gitkeep` placeholder |
+| 4 | Test utilities | Done | `test/test-utils.tsx` — custom `render()` with QueryClientProvider (fresh per test, retry: false, gcTime: 0), auth mock factories, `mockAuthUser`/`mockAdminUser` fixtures; `test/mocks/api-client.ts` — reusable `mockApi` + `MockApiClientError` |
+| 5 | npm test scripts | Done | `test`, `test:watch`, `test:coverage`, `test:e2e`, `test:e2e:ui` |
+| 6 | Unit tests (4 files, 28 tests) | Done | `lib/utils.test.ts`, `lib/stores/leaderboard-store.test.ts`, `lib/stores/theme-store.test.ts`, `middleware.test.ts` |
+| 7 | Component tests (10 files, 55 tests) | Done | footer, outcome-badge, accuracy-badge, prediction-card, stats-counters, theme-toggle, about page, terms page, privacy page, contact page |
+| 8 | Integration tests (8 files, 55 tests) | Done | api-client, auth-context, navbar, search-bar, follow-button, watchlist-button, notification-bell, announcement-banner |
+
+### Test Results
+
+- **138 frontend tests passing** across 22 test files
+- **435 backend tests passing** (unchanged)
+- **ruff check**: clean
+- **npm run lint**: 0 errors (2 pre-existing warnings in admin config page)
+- **npx tsc --noEmit**: clean
+- **npm run build**: clean (32 routes)
+
+### Files Created
+
+```
+frontend/
+  vitest.config.ts
+  playwright.config.ts
+  e2e/.gitkeep
+  test/setup.tsx
+  test/test-utils.tsx
+  test/mocks/api-client.ts
+  lib/utils.test.ts
+  lib/stores/leaderboard-store.test.ts
+  lib/stores/theme-store.test.ts
+  lib/api-client.test.ts
+  lib/auth-context.test.tsx
+  middleware.test.ts
+  components/footer.test.tsx
+  components/outcome-badge.test.tsx
+  components/accuracy-badge.test.tsx
+  components/prediction-card.test.tsx
+  components/stats-counters.test.tsx
+  components/theme-toggle.test.tsx
+  components/navbar.test.tsx
+  components/search-bar.test.tsx
+  components/follow-button.test.tsx
+  components/watchlist-button.test.tsx
+  components/notification-bell.test.tsx
+  components/announcement-banner.test.tsx
+  app/(public)/terms/page.tsx
+  app/(public)/privacy/page.tsx
+  app/(public)/contact/page.tsx
+  app/(public)/about/page.test.tsx
+  app/(public)/terms/page.test.tsx
+  app/(public)/privacy/page.test.tsx
+  app/(public)/contact/page.test.tsx
+```
+
+### Files Modified
+
+| File | Change |
+|------|--------|
+| `frontend/package.json` | Added 7 devDependencies + 5 test scripts |
+| `frontend/package-lock.json` | Lock file updated |
+| `frontend/components/footer.tsx` | Added Contact, Terms, Privacy nav links |
+
+### Observations & Design Notes
+
+#### 1. `vi.hoisted()` required for mock factories referencing top-level variables
+
+Vitest hoists `vi.mock()` factory functions above all imports. Tests that reference imported mock objects (e.g. `mockApi` from `test/mocks/api-client.ts`) inside the factory get `ReferenceError: Cannot access before initialization`. Solution: use `vi.hoisted()` to define mocks that need to be referenced in both the factory and the test body.
+
+#### 2. Setup file needs `.tsx` extension for JSX in mock definitions
+
+The `next/link` mock renders a plain `<a>` element using JSX. A `.ts` extension causes esbuild to fail with `Expected ">" but found "href"`. The setup file must be `.tsx`.
+
+#### 3. Test colocated next to source files
+
+All test files are colocated with their source (`component.test.tsx` next to `component.tsx`). This follows the Vitest convention and makes it easy to find tests for any component.
+
+#### 4. Zustand stores tested via `getState()`/`setState()`
+
+Zustand stores are tested outside React components using `getState()` for reads and the action methods directly. `setState()` is used in `beforeEach` to reset store state between tests. localStorage is cleared to prevent persist middleware leakage.
+
+---
+
 ## Known Gaps & Future Considerations
 
 | Item | Sprint | Status | Notes |
@@ -1466,3 +1559,4 @@ The `search` parameter in `list_users()` applies `ilike` on both `User.email` an
 | ~~Next.js middleware → proxy migration~~ | ~~6+~~ | **Done** | `rewrites()` in `next.config.ts` proxies browser API calls; middleware still exists for auth redirects |
 | ~~Prediction table enrichment~~ | ~~6~~ | **Done** | Enriched queries with JOINs, linked names in frontend |
 | Sitemap dedicated listing endpoint | 6+ | Open | Current sitemap uses search API with `%` pattern; add dedicated endpoint if entity count grows |
+| Playwright E2E test suites | Post-MVP | Open | Framework configured; write tests for public flows (homepage, leaderboard, search, legal pages), auth flows, and protected routes |

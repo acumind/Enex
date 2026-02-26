@@ -23,7 +23,8 @@ Read these in order before touching code:
 
 | Layer | Technology |
 |-------|-----------|
-| Frontend | Next.js 15 (App Router) · React 19 · Shadcn/ui · TanStack Query · Zustand |
+| Frontend | Next.js 16 (App Router) · React 19 · Shadcn/ui · TanStack Query · Zustand |
+| Frontend Testing | Vitest · React Testing Library · Playwright |
 | Backend | FastAPI · Python 3.12 · SQLAlchemy 2.0 · Alembic · Pydantic v2 |
 | Database | PostgreSQL 16 |
 | Cache / Queue | Redis 7 · Celery |
@@ -154,14 +155,20 @@ Integration tests require Docker Compose to be running (they use a real PostgreS
 ```bash
 cd frontend
 
-# Run all tests
+# Run all unit/component/integration tests (Vitest)
 npm test
 
-# With coverage
-npm test -- --coverage
-
-# Watch mode (during development)
+# Watch mode (re-runs on file changes)
 npm run test:watch
+
+# With coverage report
+npm run test:coverage
+
+# Run E2E tests (Playwright — requires dev server)
+npm run test:e2e
+
+# E2E with interactive UI
+npm run test:e2e:ui
 ```
 
 ### Generate TypeScript API client (after backend schema changes)
@@ -245,6 +252,13 @@ Enex/
 │   │   ├── generated/              # Auto-generated TypeScript API client
 │   │   ├── api-client.ts           # Typed API wrapper
 │   │   └── auth.ts                 # NextAuth.js config
+│   ├── test/                       # Test setup and utilities
+│   │   ├── setup.tsx               # Global mocks and jest-dom matchers
+│   │   ├── test-utils.tsx          # Custom render, auth mock factories
+│   │   └── mocks/                  # Reusable mock objects
+│   ├── e2e/                        # Playwright E2E tests (placeholder)
+│   ├── vitest.config.ts            # Vitest configuration
+│   ├── playwright.config.ts        # Playwright configuration
 │   ├── .env.example
 │   ├── package.json
 │   └── Dockerfile

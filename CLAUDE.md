@@ -12,7 +12,8 @@ Analyst Prediction Tracker for Indian equity markets. Tracks stock price target 
 
 ## Tech stack
 - **Backend**: FastAPI · Python 3.12 · SQLAlchemy 2.0 · Alembic · Pydantic v2 · Celery · Redis
-- **Frontend**: Next.js 15 (App Router) · React 19 · Shadcn/ui · TanStack Query · Zustand · NextAuth.js v5
+- **Frontend**: Next.js 16 (App Router) · React 19 · Shadcn/ui · TanStack Query · Zustand · NextAuth.js v5
+- **Frontend Testing**: Vitest · React Testing Library · Playwright
 - **Database**: PostgreSQL 16
 - **AI**: Anthropic Claude API (prediction extraction)
 - **Deployment**: Azure Container Apps
@@ -33,8 +34,9 @@ Analyst Prediction Tracker for Indian equity markets. Tracks stock price target 
 
 ## Current status
 - **Sprints 0–10 complete** (scaffolding, core data, prediction entry, auth, evaluation, public pages, engagement & polish, hardening/caching, OG images, Zustand, email notifications, proxy migration, admin features, advanced admin: runtime config/system health/eval dashboard/alerts/CSV exports/notification broadcast, admin operations: user management/predictor management/login tracking/bulk actions/stale alerts/announcement banner)
-- 435 backend tests passing, frontend lint/tsc/build clean
-- **Next step: Azure deployment, load testing, production hardening**
+- **Frontend testing framework complete** — Vitest + RTL (138 tests, 22 files), Playwright E2E scaffold
+- 435 backend tests passing, 138 frontend tests passing, lint/tsc/build clean
+- **Next step: Azure deployment, load testing, production hardening, Playwright E2E suites**
 
 ## Git
 - Main branch: `main`
