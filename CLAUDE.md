@@ -34,9 +34,9 @@ Analyst Prediction Tracker for Indian equity markets. Tracks stock price target 
 
 ## Current status
 - **Sprints 0–10 complete** (scaffolding, core data, prediction entry, auth, evaluation, public pages, engagement & polish, hardening/caching, OG images, Zustand, email notifications, proxy migration, admin features, advanced admin: runtime config/system health/eval dashboard/alerts/CSV exports/notification broadcast, admin operations: user management/predictor management/login tracking/bulk actions/stale alerts/announcement banner)
-- **Frontend testing framework complete** — Vitest + RTL (138 tests, 22 files), Playwright E2E scaffold
-- 435 backend tests passing, 138 frontend tests passing, lint/tsc/build clean
-- **Next step: Azure deployment, load testing, production hardening, Playwright E2E suites**
+- **Frontend testing complete** — Vitest + RTL (138 tests, 22 files), Playwright E2E (68 tests, 9 specs)
+- 435 backend tests passing, 138 frontend unit tests passing, 68 E2E tests passing, lint/tsc/build clean
+- **Next step: Azure deployment, load testing, production hardening**
 
 ## Git
 - Main branch: `main`

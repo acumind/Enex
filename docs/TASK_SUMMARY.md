@@ -1541,6 +1541,84 @@ Zustand stores are tested outside React components using `getState()` for reads 
 
 ---
 
+## Playwright E2E Test Suites (Completed)
+
+### Objective
+
+Add end-to-end tests for all public user flows using Playwright. All API calls are intercepted via `page.route()` — no backend required.
+
+### Tasks Completed
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 1 | Shared mock data fixtures | Done | `mockStats`, `mockLeaderboard` (5+21), `mockSearchResponse`, `mockAnnouncement`, `mockAuthUser` conforming to `lib/types.ts` |
+| 2 | Reusable API route helpers | Done | `mockPublicApiRoutes`, `mockLeaderboardApi`, `mockSearchApi`, `mockAnnouncementApi`, `mockAuthenticatedState`, `mockOtpFlow`, `mockOtpRateLimited` |
+| 3 | Auth cookie helpers | Done | `setAuthCookie(context)`, `clearAuthCookies(context)` for middleware testing |
+| 4 | Static pages spec (13 tests) | Done | About (3), Terms (3), Privacy (3), Contact (4) — headings, sections, external links |
+| 5 | Homepage spec (4 tests) | Done | Hero heading, CTAs, How It Works, navigation |
+| 6 | Navigation spec (9 tests) | Done | Navbar links/auth states (5), Footer links/copyright/disclaimer (4) |
+| 7 | Leaderboard spec (8 tests) | Done | Table rendering, filter tabs, sort dropdown, pagination, empty state, predictor links |
+| 8 | Search spec (7 tests) | Done | Input placeholder, debounce behavior, dropdown sections, navigation, input clear |
+| 9 | Login spec (10 tests) | Done | Welcome card, 3 tabs, OTP flow, validation, countdown, rate limit error |
+| 10 | Auth middleware spec (8 tests) | Done | 7 protected path redirects, auth cookie access, 3 public paths |
+| 11 | Theme spec (2 tests) | Done | Toggle button aria-label, dark class toggle |
+| 12 | Announcement spec (4 tests) | Done | Banner show, dismiss, persist dismiss on reload, no banner on 404 |
+| 13 | Add Playwright artifacts to `.gitignore` | Done | `/playwright-report`, `/test-results` |
+
+### Verification Results
+
+| Check | Result |
+|-------|--------|
+| `npx tsc --noEmit` | Clean |
+| `npm run lint` | Clean (2 pre-existing warnings, not from E2E files) |
+| `npm run test:e2e` | **68 passed** (13.8s) |
+| `npm run test` | **138 Vitest tests still passing** |
+
+### Files Created
+
+```
+frontend/e2e/
+  fixtures/mock-data.ts
+  fixtures/api-routes.ts
+  fixtures/auth.ts
+  static-pages.spec.ts
+  homepage.spec.ts
+  navigation.spec.ts
+  leaderboard.spec.ts
+  search.spec.ts
+  login.spec.ts
+  auth-middleware.spec.ts
+  theme.spec.ts
+  announcement.spec.ts
+```
+
+### Files Modified
+
+| File | Change |
+|------|--------|
+| `frontend/.gitignore` | Added `/playwright-report`, `/test-results` |
+| `frontend/e2e/.gitkeep` | Removed (replaced by actual test files) |
+
+### Observations & Design Notes
+
+#### 1. `page.route()` intercepts client-side fetches only
+
+SSR fetches (e.g., homepage `fetchJSON`) hit the real backend (which isn't running), return `null`, and the SSR data sections simply don't render. Static content (hero, How It Works, footer) still renders and is fully testable. Client-side pages (leaderboard, search, login) are fully controllable via route mocking.
+
+#### 2. Next.js dev tools button conflicts with "Next" button selector
+
+Playwright strict mode fails when `getByRole('button', { name: 'Next' })` matches both the pagination button and Next.js dev tools button. Fix: use `{ exact: true }` for the pagination button selector.
+
+#### 3. `addInitScript` runs on every page load including reload
+
+Using `addInitScript(() => localStorage.clear())` in `beforeEach` clears localStorage on page reload, which breaks tests that verify dismissed state persists across reload. Fix: use `page.evaluate(() => localStorage.clear())` after the initial `goto` instead.
+
+#### 4. Suspense can cause duplicate DOM elements
+
+The login page wraps `LoginPageInner` in `<Suspense>`, which can cause temporary duplicate rendering of elements like `CardTitle`. Fix: use `.first()` on locators when the element is known to appear once logically but may duplicate during hydration.
+
+---
+
 ## Known Gaps & Future Considerations
 
 | Item | Sprint | Status | Notes |
@@ -1559,4 +1637,4 @@ Zustand stores are tested outside React components using `getState()` for reads 
 | ~~Next.js middleware → proxy migration~~ | ~~6+~~ | **Done** | `rewrites()` in `next.config.ts` proxies browser API calls; middleware still exists for auth redirects |
 | ~~Prediction table enrichment~~ | ~~6~~ | **Done** | Enriched queries with JOINs, linked names in frontend |
 | Sitemap dedicated listing endpoint | 6+ | Open | Current sitemap uses search API with `%` pattern; add dedicated endpoint if entity count grows |
-| Playwright E2E test suites | Post-MVP | Open | Framework configured; write tests for public flows (homepage, leaderboard, search, legal pages), auth flows, and protected routes |
+| ~~Playwright E2E test suites~~ | ~~Post-MVP~~ | **Done** | 68 tests across 9 specs covering static pages, homepage, navigation, leaderboard, search, login/OTP, auth middleware, theme, announcements |
