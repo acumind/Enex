@@ -32,9 +32,9 @@ Analyst Prediction Tracker for Indian equity markets. Tracks stock price target 
 - Unified `predictors` table for all types (individual, brokerage, research_firm, media_house, influencer)
 
 ## Current status
-- **Sprints 0–6 complete** (scaffolding, core data, prediction entry, auth, evaluation, public pages, engagement & polish)
-- 385 backend tests passing, frontend lint/tsc/build clean
-- **Next step: Sprint 7+ — OpenGraph images, email notifications, further polish**
+- **Sprints 0–7+ complete** (scaffolding, core data, prediction entry, auth, evaluation, public pages, engagement & polish, hardening/caching, OG images, Zustand, email notifications, proxy migration)
+- 421 backend tests passing, frontend lint/tsc/build clean
+- **Next step: Azure deployment, load testing, production hardening**
 
 ## Git
 - Main branch: `main`

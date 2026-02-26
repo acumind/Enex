@@ -2,7 +2,7 @@
 
 > Living document tracking sprint-wise completion, observations, and guidance for future implementation.
 >
-> Last updated: 2026-02-26
+> Last updated: 2026-02-27
 
 ---
 
@@ -961,14 +961,9 @@ npx shadcn@latest add card      # adds Card component
 - Rate limit OTP requests: 5/hour per identifier (already have the Redis infrastructure from Sprint 2)
 - `user_has_identity` CHECK constraint requires at least email or phone — enforce at the API layer too
 
-### Sprint 7+: Upcoming Work
+### Sprint 7+: Completed
 
-**Potential areas for next sprints:**
-- OpenGraph images for social sharing
-- `generateStaticParams` for popular predictors/stocks (pre-render at build time)
-- Zustand for client state (filters, sort preferences)
-- Email notifications (NOTIFICATION_EMAIL_ENABLED flag already in config)
-- Next.js middleware → proxy migration (Next.js 16 deprecation)
+All five planned post-sprint items have been implemented — see "Sprint 7+: Social Sharing, SEO, State, Email & Proxy" section below.
 
 ---
 
@@ -1080,6 +1075,79 @@ Address remaining pre-MVP gaps: public IP rate limiting, platform stats API, Red
 
 ---
 
+## Sprint 7+: Social Sharing, SEO, State, Email & Proxy (Completed)
+
+### Objective
+
+Implement the five remaining pre-beta items: OpenGraph images for social sharing, `generateStaticParams` for SEO pre-rendering, Zustand stores for persistent UI state, email notifications wired to existing infrastructure, and Next.js proxy migration to eliminate CORS.
+
+### Tasks Completed
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 1 | OpenGraph images | Done | Root metadata (`metadataBase`, `openGraph`, `twitter`), default branded OG image, dynamic predictor OG image (name, type, accuracy, count), dynamic stock OG image (name, symbol, sector, exchange) |
+| 2 | `generateStaticParams` | Done | Predictor + stock pages pre-render top 50 from search API, `dynamicParams = true` for on-demand ISR, 3600s revalidation |
+| 3 | Zustand stores | Done | Leaderboard store (predictorType, sortBy), theme store (light/dark/system), both with `persist` middleware → localStorage; ThemeToggle + LeaderboardClient refactored |
+| 4 | Email notifications | Done | Templates for outcome + new-prediction emails; wired into both dispatch jobs after `create_bulk()`; checks `NOTIFICATION_EMAIL_ENABLED` flag + `is_email_verified`; sends via `ResendAdapter` |
+| 5 | Next.js proxy migration | Done | `rewrites()` in `next.config.ts` proxying `/api/v1/*` → `BACKEND_URL`; browser API calls use relative `/api/v1` path; server components keep direct backend URL |
+
+### New Files (8)
+
+| File | Purpose |
+|------|---------|
+| `frontend/app/opengraph-image.tsx` | Default branded OG image (1200x630, dark gradient) |
+| `frontend/app/(public)/predictor/[slug]/opengraph-image.tsx` | Predictor OG image with name, type badge, accuracy %, prediction count |
+| `frontend/app/(public)/stock/[symbol]/opengraph-image.tsx` | Stock OG image with name, symbol, sector, exchange badge |
+| `frontend/lib/stores/leaderboard-store.ts` | Zustand store for leaderboard filter/sort preferences |
+| `frontend/lib/stores/theme-store.ts` | Zustand store for theme mode (light/dark/system) |
+| `frontend/lib/stores/index.ts` | Barrel export for stores |
+| `backend/app/integrations/email/templates.py` | `prediction_outcome_email()` + `new_prediction_email()` inline-styled HTML templates |
+| `backend/tests/test_integrations/test_email_templates.py` | 4 template unit tests |
+
+### Modified Files (11)
+
+| File | Change |
+|------|--------|
+| `frontend/app/layout.tsx` | Added `metadataBase`, `openGraph`, `twitter` config |
+| `frontend/app/(public)/predictor/[slug]/page.tsx` | Added `generateStaticParams()`, `dynamicParams`, openGraph metadata |
+| `frontend/app/(public)/stock/[symbol]/page.tsx` | Added `generateStaticParams()`, `dynamicParams`, openGraph metadata |
+| `frontend/components/theme-toggle.tsx` | Refactored from `useSyncExternalStore` + manual localStorage to `useThemeStore` + `useEffect` |
+| `frontend/app/(public)/leaderboard/leaderboard-client.tsx` | Replaced `useState` filter/sort with `useLeaderboardStore` selectors |
+| `frontend/next.config.ts` | Added `rewrites()` proxying `/api/v1/:path*` to `BACKEND_URL` |
+| `frontend/lib/api-client.ts` | Browser → `/api/v1` (relative), server → full URL from env |
+| `frontend/lib/auth-context.tsx` | Hardcoded `/api/v1` (always browser context) |
+| `frontend/app/(auth)/login/page.tsx` | Hardcoded `/api/v1` (always browser context) |
+| `backend/app/jobs/notifications.py` | Added `_send_outcome_emails()` + `_send_new_prediction_emails()`, wired after `create_bulk()` in both dispatch jobs |
+| `backend/tests/test_jobs/test_notification_jobs.py` | 5 new email dispatch tests (enabled/disabled, verified/unverified, no-users) |
+
+### Test Summary
+
+9 new tests → 421 total (412 existing + 9 new). Backend ruff clean, frontend eslint + tsc + `next build` clean.
+
+### Observations
+
+#### 1. OG images use `next/og` `ImageResponse` (built into Next.js 16)
+
+No extra packages needed. Images are generated server-side as PNGs. Co-located `opengraph-image.tsx` files are auto-discovered by Next.js — no explicit image URL in metadata required. Graceful fallback if API is unreachable (shows slug/symbol as name, "N/A" for stats).
+
+#### 2. generateStaticParams reuses the search API pattern from sitemap.ts
+
+Both `sitemap.ts` and the new `generateStaticParams()` functions use `GET /search?q=%25&limit=50` to discover known entities. This avoids adding a dedicated listing endpoint. If entity count grows significantly, a dedicated endpoint should be added (see Known Gaps).
+
+#### 3. Zustand persist middleware and hydration
+
+Zustand's `persist` middleware with `name: "enex-leaderboard"` / `name: "enex-theme"` stores state in `localStorage`. Offset (pagination) is intentionally kept as local `useState` — it's transient and should reset on navigation. The theme store supports "system" mode which listens to `matchMedia("(prefers-color-scheme: dark)")` changes via `useEffect`.
+
+#### 4. Email dispatch is best-effort, after in-app notifications
+
+Email sending happens after `notification_repo.create_bulk()` succeeds, wrapped in per-user try/except. A single email failure doesn't affect other users or the in-app notification creation. The `NOTIFICATION_EMAIL_ENABLED` config flag (default `False`) gates all email dispatch — no emails sent unless explicitly enabled.
+
+#### 5. Proxy migration keeps server components on direct backend URL
+
+Only browser-context code (`api-client.ts` in browser, `auth-context.tsx`, `login/page.tsx`) uses the relative `/api/v1` proxy path. Server components (`predictor/page.tsx`, `stock/page.tsx`, `sitemap.ts`, `page.tsx`) continue using `NEXT_PUBLIC_API_URL` for direct backend access — they don't go through the proxy since they run server-side. The `BACKEND_URL` env var (server-only, not `NEXT_PUBLIC_`) configures the rewrite destination.
+
+---
+
 ## Known Gaps & Future Considerations
 
 | Item | Sprint | Status | Notes |
@@ -1095,6 +1163,6 @@ Address remaining pre-MVP gaps: public IP rate limiting, platform stats API, Red
 | ~~Pre-commit config~~ | ~~Next sprint~~ | **Done** | `.pre-commit-config.yaml` exists with local ruff hooks |
 | ~~Frontend auth middleware~~ | ~~3~~ | **Done** | Middleware.ts redirects protected paths to login when no refresh_token cookie |
 | ~~Celery worker deployment~~ | ~~3+~~ | **Done** | `celery-worker` and `celery-beat` services already in `docker-compose.yml` since Sprint 0 |
-| Next.js middleware → proxy migration | 6+ | Open | Next.js 16 deprecates `middleware.ts` in favor of `proxy` convention |
+| ~~Next.js middleware → proxy migration~~ | ~~6+~~ | **Done** | `rewrites()` in `next.config.ts` proxies browser API calls; middleware still exists for auth redirects |
 | ~~Prediction table enrichment~~ | ~~6~~ | **Done** | Enriched queries with JOINs, linked names in frontend |
 | Sitemap dedicated listing endpoint | 6+ | Open | Current sitemap uses search API with `%` pattern; add dedicated endpoint if entity count grows |
