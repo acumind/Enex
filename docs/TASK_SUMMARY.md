@@ -2,7 +2,7 @@
 
 > Living document tracking sprint-wise completion, observations, and guidance for future implementation.
 >
-> Last updated: 2026-02-27
+> Last updated: 2026-02-26
 
 ---
 
@@ -1145,6 +1145,107 @@ Email sending happens after `notification_repo.create_bulk()` succeeds, wrapped 
 #### 5. Proxy migration keeps server components on direct backend URL
 
 Only browser-context code (`api-client.ts` in browser, `auth-context.tsx`, `login/page.tsx`) uses the relative `/api/v1` proxy path. Server components (`predictor/page.tsx`, `stock/page.tsx`, `sitemap.ts`, `page.tsx`) continue using `NEXT_PUBLIC_API_URL` for direct backend access — they don't go through the proxy since they run server-side. The `BACKEND_URL` env var (server-only, not `NEXT_PUBLIC_`) configures the rewrite destination.
+
+---
+
+## Sprint 8: Admin Features for Production Launch (Completed)
+
+### Objective
+
+Replace stub admin dashboard with real analytics, add prediction editing, stock management UI, audit logging across all admin actions, and surface Celery job failures — the final admin tooling needed before production launch.
+
+### Tasks Completed
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 1 | Admin stats API (`GET /admin/stats`) | Done | Pending predictions/suggestions counts, total users/predictors/stocks, predictions today/this week |
+| 2 | `AdminStatsResponse` + `JobStatusResponse` schemas | Done | Added to `schemas/stats.py` |
+| 3 | `PredictionUpdate` schema | Done | Optional fields: target_price, price_at_prediction, prediction_date, target_date, source_url, source_type, raw_quote |
+| 4 | Prediction edit service method | Done | `PredictionService.update()` — blocks evaluated predictions, recalculates default_eval_date on date changes |
+| 5 | Prediction edit endpoint (`PATCH /admin/predictions/{id}`) | Done | Admin-only, returns `PredictionResponse` |
+| 6 | Stock list endpoint (`GET /admin/stocks`) | Done | Reuses `StockService.list_with_filters()`, cursor-paginated, sector filter |
+| 7 | Stock update endpoint (`PATCH /admin/stocks/{id}`) | Done | Reuses `StockService.update()` + `StockUpdate` schema |
+| 8 | `AuditLog` model + migration | Done | UUID PK, actor_id FK, action, entity_type, entity_id, JSONB details, created_at DESC index |
+| 9 | Audit log repository | Done | `list_recent()` with cursor pagination and actor name enrichment via JOIN |
+| 10 | Audit log service | Done | `record()` creates entry, `list_recent()` returns paginated response |
+| 11 | Audit log API (`GET /admin/audit-log`) | Done | Admin-only, cursor-paginated |
+| 12 | Wire audit logging into 13 existing mutation endpoints | Done | predictor create/update, stock create/update, prediction create/edit/approve/reject, suggestion promote/dismiss, user role/ban/unban, evaluation trigger |
+| 13 | Celery task tracker (`task_tracker.py`) | Done | Redis sorted set `enex:recent_tasks`, ZADD with timestamp, capped at 200 entries |
+| 14 | Wire `track_task()` into all 7 Celery tasks | Done | extraction, evaluation, price_fetcher, scorecard, archive, 2× notifications |
+| 15 | `result_expires=86400` in Celery config | Done | 24h result expiry for `AsyncResult` lookups |
+| 16 | Job status API (`GET /admin/jobs/recent`) | Done | Returns task_id, task_name, status, result, date_done, traceback |
+| 17 | DI providers for stats + audit log services | Done | `get_stats_service()`, `get_audit_log_service()` in `deps.py` |
+| 18 | Admin dashboard rewrite (frontend) | Done | Stats grid (4 cards), quick actions (4 links), recent activity, recent jobs with color-coded badges |
+| 19 | Prediction edit dialog in review queue | Done | Dialog with all editable fields, source type dropdown, `useMutation` + query invalidation |
+| 20 | Stock management page (frontend) | Done | Table with symbol/name/exchange/sector/active columns, create/edit dialogs, cursor pagination |
+| 21 | Frontend types | Done | Added `AdminStatsResponse`, `PredictionUpdate`, `StockCreate`, `StockUpdate`, `AuditLogResponse`, `JobStatusResponse` |
+| 22 | Audit log service tests | Done | 5 tests — record, record without entity, list entries, list all, actor name enrichment |
+| 23 | Admin audit API tests | Done | 9 tests — stats, stats auth, audit on create, pagination, prediction edit, evaluated edit blocked, stock list, stock update, job status |
+
+### Files Created (9)
+
+| File | Purpose |
+|------|---------|
+| `backend/app/models/audit_log.py` | AuditLog ORM model |
+| `backend/app/repositories/audit_log.py` | AuditLog repository with enriched listing |
+| `backend/app/services/audit_log.py` | AuditLog service (record + list) |
+| `backend/app/schemas/audit_log.py` | `AuditLogResponse` schema |
+| `backend/app/jobs/task_tracker.py` | Redis-based Celery task ID tracker |
+| `backend/migrations/versions/842ae0e85e90_add_audit_logs_table.py` | Alembic migration |
+| `backend/tests/test_services/test_audit_log_service.py` | 5 audit service tests |
+| `backend/tests/test_api/test_admin_audit.py` | 9 admin API integration tests |
+| `frontend/app/(admin)/admin/stocks/page.tsx` | Stock management page |
+
+### Files Modified (17)
+
+| File | Change |
+|------|--------|
+| `backend/app/api/routes/admin.py` | 6 new endpoints + audit logging in all 13 mutations |
+| `backend/app/api/deps.py` | Added `get_stats_service()`, `get_audit_log_service()` |
+| `backend/app/schemas/prediction.py` | Added `PredictionUpdate` |
+| `backend/app/schemas/stats.py` | Added `AdminStatsResponse`, `JobStatusResponse` |
+| `backend/app/services/prediction.py` | Added `update()` method |
+| `backend/app/services/stats.py` | Added `get_admin_stats()` |
+| `backend/app/models/__init__.py` | Registered `AuditLog` |
+| `backend/app/jobs/celery_app.py` | Added `result_expires=86400` |
+| `backend/app/jobs/extraction.py` | Added `track_task()` call |
+| `backend/app/jobs/evaluation.py` | Added `track_task()` call |
+| `backend/app/jobs/price_fetcher.py` | Added `track_task()` call |
+| `backend/app/jobs/scorecard.py` | Added `track_task()` call |
+| `backend/app/jobs/archive.py` | Added `track_task()` call |
+| `backend/app/jobs/notifications.py` | Added `track_task()` calls (2 tasks) |
+| `frontend/app/(admin)/admin/page.tsx` | Full dashboard rewrite |
+| `frontend/app/(admin)/admin/review-queue/page.tsx` | Added Edit button + dialog |
+| `frontend/lib/types.ts` | Added 6 new interfaces |
+
+### Test Results
+
+- **435 backend tests passing** (14 new: 5 service + 9 API)
+- **ruff check**: clean
+- **ESLint**: clean (0 warnings)
+- **`next build`**: clean (all routes compile)
+
+### Observations & Design Notes
+
+#### 1. Audit log uses JSONB details with string-coerced values
+
+The `details` column stores a JSON dict of changed fields. Decimal values from Pydantic's `model_dump(exclude_unset=True)` are coerced to strings via `{k: str(v) for k, v in ...}` before storage, since PostgreSQL JSONB doesn't natively serialize Python `Decimal` types. This is consistent — all detail values are strings.
+
+#### 2. Task tracker is sync Redis (not async) by design
+
+The `task_tracker.py` uses synchronous `redis.Redis` because it runs inside Celery task functions which are sync. The `get_recent_tasks()` function also uses sync Redis since it reads the sorted set and calls `celery_app.AsyncResult()` (which is a sync Celery API despite the name). The admin API endpoint wraps this in a sync call.
+
+#### 3. Prediction edit blocks evaluated predictions at the service layer
+
+`PredictionService.update()` queries for `PredictionOutcome` existence before allowing edits. If an outcome exists, it raises `BusinessRuleViolation("Cannot edit an evaluated prediction")`. The `upside_pct` column is `GENERATED ALWAYS` in PostgreSQL, so it auto-recalculates when `target_price` or `price_at_prediction` changes.
+
+#### 4. Audit logging is fire-and-forget within the same transaction
+
+Audit records are created via `session.flush()` (not commit) inside the same DB transaction as the main operation. If the audit write fails, the entire transaction rolls back — this ensures we never have a mutation without its corresponding audit entry. The `await db.commit()` at the route level commits both the main operation and the audit entry atomically.
+
+#### 5. Stock management reuses existing backend infrastructure
+
+`GET /admin/stocks` reuses `StockService.list_with_filters()` (already supports sector filter + cursor pagination, returns active AND inactive stocks). `PATCH /admin/stocks/{id}` reuses `StockService.update()` + `StockUpdate` schema — both were already implemented in Sprint 1. No new service methods were needed.
 
 ---
 
