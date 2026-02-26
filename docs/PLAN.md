@@ -193,19 +193,115 @@ RSS Feeds / Licensed APIs
 
 ## Phase 5: Monetization & Sustainability
 
-### 5.1 Revenue Streams (Future)
+### 5.1 Data Moat
 
-| Stream | Description |
-|--------|-------------|
-| **Freemium model** | Basic leaderboard free; detailed analytics, alerts, and API access behind a subscription |
-| **API access** | Let fintech apps, robo-advisors, and other platforms query analyst reliability scores |
-| **Institutional reports** | Sell aggregated accuracy reports to firms who want to benchmark their analysts |
-| **Advertising** | Financial product ads (tasteful, non-conflicting) |
-| **Premium alerts** | Real-time notifications when high-accuracy predictors make new calls |
+Over time, the historical prediction database becomes extremely valuable — no one else will have this longitudinal data of analyst predictions mapped to outcomes. This is the core competitive advantage that enables all monetization.
 
-### 5.2 Data Moat
+### 5.2 Payment Infrastructure
 
-Over time, the historical prediction database becomes extremely valuable — no one else will have this longitudinal data of analyst predictions mapped to outcomes.
+| Component | Details |
+|-----------|---------|
+| **Payment gateway** | Razorpay (Indian market standard) — UPI, cards, net banking, wallets |
+| **Subscription billing** | Razorpay Subscriptions API — auto-renewal, plan changes, cancellation |
+| **Invoice generation** | GST-compliant invoicing with HSN/SAC codes |
+| **Webhook handling** | Payment success/failure → plan activation/deactivation |
+| **Refund policy engine** | Pro-rated refunds for annual plans, configurable grace periods |
+
+### 5.3 Freemium Access Gating
+
+| Tier | Access |
+|------|--------|
+| **Free** | Leaderboard (top 20), predictor profiles (last 10 predictions), basic stock page, community suggestions |
+| **Pro** | Full leaderboard, unlimited prediction history, advanced filters, export CSV, email alerts (50/month), API (1K calls/month) |
+| **Enterprise** | Everything in Pro + bulk API (100K calls/month), webhook feeds, custom reports, SLA support, white-label embeds |
+
+Implementation: middleware-based gating — check user's plan tier on each request, return `402 Payment Required` with upgrade prompt for gated features.
+
+### 5.4 Premium Analytics Features
+
+| Feature | Description |
+|---------|-------------|
+| **Advanced leaderboard filters** | Filter by sector, market cap, time period, prediction type, minimum sample size |
+| **Head-to-head comparison** | Compare any two predictors across all metrics with visual charts |
+| **Sector heatmaps** | Which sectors have the most accurate/inaccurate predictions overall |
+| **Portfolio simulator** | "If you followed predictor X's calls, here's your hypothetical return vs Nifty 50" |
+| **Custom alerts** | "Notify me when [predictor] with >70% accuracy makes a new call on [sector/stock]" |
+| **Accuracy trends** | Is a predictor getting better or worse over time? Rolling accuracy charts |
+| **Consensus tracker** | When multiple high-accuracy predictors agree on a stock, surface that signal |
+| **Prediction timing analysis** | Analyze which predictors are best at short-term vs long-term calls |
+
+### 5.5 Data & API Access
+
+| Tier | Rate Limit | Features |
+|------|------------|----------|
+| **Free API** | 100 calls/day | Leaderboard top 20, basic predictor stats |
+| **Pro API** | 1,000 calls/day | Full leaderboard, predictor details, prediction history, stock predictions |
+| **Enterprise API** | 100,000 calls/day | Everything + bulk endpoints, webhook subscriptions, historical data dumps |
+
+Additional B2B offerings:
+- **Embeddable widgets** — `<iframe>` or JS snippet showing predictor scores on third-party sites (fintech apps, broker platforms)
+- **Bulk data exports** — Monthly/quarterly data dumps for research institutions
+- **Custom reports** — Aggregated accuracy reports for firms benchmarking their own analysts
+
+### 5.6 Advertising & Sponsorship
+
+| Type | Description |
+|------|-------------|
+| **Contextual ads** | Financial product ads on stock pages (demat accounts, mutual funds, insurance) — non-conflicting |
+| **Sponsored predictor profiles** | Brokerages/firms pay for verified badge + enhanced profile placement |
+| **Newsletter sponsorship** | Sponsored section in weekly digest emails |
+
+Guidelines: No ads that could create conflicts of interest (e.g., no stock tips ads). Clearly label all sponsored content.
+
+### 5.7 Community & Engagement Features
+
+| Feature | Monetization Angle |
+|---------|-------------------|
+| **User predictions** | Let registered users make their own predictions, track personal accuracy — builds engagement & data |
+| **Comments & discussion** | Threaded comments on predictions — drives daily active usage |
+| **Prediction contests** | Monthly/quarterly contests with prizes — viral growth, sponsor potential |
+| **Referral program** | Invite friends → earn free Pro days — organic growth engine |
+| **Verified predictor claims** | Predictors claim their profile, add context to predictions — builds trust, upsell for enhanced profiles |
+| **Community corrections** | Users flag incorrect predictions/outcomes — improves data quality at zero cost |
+
+### 5.8 Premium Notifications
+
+| Channel | Free | Pro |
+|---------|------|-----|
+| **Email** | Weekly digest only | Real-time + digest, 50 custom alerts/month |
+| **Push (web/mobile)** | None | Real-time alerts for followed predictors |
+| **SMS** | None | Critical alerts only (new prediction from >80% accuracy predictor on your watchlist) |
+| **Telegram/WhatsApp** | None | Bot integration for real-time prediction feeds |
+
+### 5.9 Mobile App (Future)
+
+| Feature | Details |
+|---------|---------|
+| **React Native app** | Share codebase with web where possible (API-first approach already supports this) |
+| **Push notifications** | Native push for prediction alerts |
+| **Offline leaderboard** | Cache leaderboard data for offline viewing |
+| **Quick submit** | Screenshot → AI extraction of predictions from mobile |
+
+### 5.10 Pricing Strategy (Indian Market)
+
+```
+Free:        ₹0/month   — Basic access, community features
+Pro:         ₹299/month  — Advanced analytics, alerts, API, exports (₹2,999/year — 2 months free)
+Enterprise:  ₹2,999/month — Bulk API, webhooks, custom reports, SLA (₹29,999/year)
+```
+
+Benchmarks: Screener.in Pro ₹400/mo, Tijori Finance ₹499/mo, Trendlyne ₹399/mo — ₹299 is competitive for entry.
+
+### 5.11 Implementation Priority
+
+```
+Month 7-8:   Payment infra (Razorpay) + Freemium gating middleware + Pro plan
+Month 8-9:   Premium analytics (filters, comparisons, portfolio simulator)
+Month 9-10:  API access tiers + embeddable widgets
+Month 10-11: Community features (user predictions, comments, contests)
+Month 11-12: Premium notifications (multi-channel) + mobile app planning
+Month 12+:   Enterprise tier, B2B data products, advertising platform
+```
 
 ---
 
@@ -241,7 +337,10 @@ Days 56-62:  Sprint 8 — Load testing, security audit, legal pages
 Month 3-4:   Phase 2 — RSS feed monitoring, licensed data feeds, scaled ingestion
 Month 4-5:   Phase 3 — Community features, analyst verification, badges
 Month 5-7:   Phase 4 — Advanced analytics, comparison tools, automated crawling (if needed)
-Month 7+:    Phase 5 — Monetization, public API, premium features
+Month 7-8:   Phase 5a — Payment infra (Razorpay), freemium gating, Pro plan
+Month 8-9:   Phase 5b — Premium analytics, API tiers, embeddable widgets
+Month 9-11:  Phase 5c — Community features, premium notifications, mobile planning
+Month 12+:   Phase 5d — Enterprise tier, B2B data products, advertising
 ```
 
 ---
