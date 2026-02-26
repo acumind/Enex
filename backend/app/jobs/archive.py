@@ -30,6 +30,9 @@ async def _run_archive(prediction_id: str, url: str) -> None:
 @celery_app.task(name="archive_url_task", bind=True, max_retries=1)
 def archive_url_task(self, prediction_id: str, url: str) -> dict[str, str]:  # type: ignore[no-untyped-def]
     """Archive a URL to the Wayback Machine."""
+    from app.jobs.task_tracker import track_task
+
+    track_task(self.request.id, "archive_url")
     try:
         asyncio.run(_run_archive(prediction_id, url))
         return {"status": "ok", "url": url}

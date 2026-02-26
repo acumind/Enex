@@ -24,6 +24,9 @@ async def _run_price_fetch() -> dict[str, object]:
 @celery_app.task(name="fetch_daily_prices_task", bind=True, max_retries=1)
 def fetch_daily_prices_task(self) -> dict[str, object]:  # type: ignore[no-untyped-def]
     """Fetch daily prices for all active stocks."""
+    from app.jobs.task_tracker import track_task
+
+    track_task(self.request.id, "fetch_daily_prices")
     try:
         result = asyncio.run(_run_price_fetch())
         logger.info("Price fetch complete: %s", result)

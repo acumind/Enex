@@ -4,6 +4,7 @@ from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.services.audit_log import AuditLogService
 from app.services.auth import AuthService
 from app.services.evaluation import EvaluationService
 from app.services.extraction import ExtractionService
@@ -12,10 +13,19 @@ from app.services.notification import NotificationService
 from app.services.prediction import PredictionService
 from app.services.predictor import PredictorService
 from app.services.price_fetcher import PriceFetcherService
+from app.services.stats import StatsService
 from app.services.stock import StockService
 from app.services.suggestion import SuggestionService
 from app.services.user import UserService
 from app.services.watchlist import WatchlistService
+
+
+def get_stats_service(db: AsyncSession = Depends(get_db)) -> StatsService:
+    return StatsService(db)
+
+
+def get_audit_log_service(db: AsyncSession = Depends(get_db)) -> AuditLogService:
+    return AuditLogService(db)
 
 
 def get_auth_service(db: AsyncSession = Depends(get_db)) -> AuthService:

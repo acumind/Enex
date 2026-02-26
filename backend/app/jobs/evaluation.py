@@ -32,6 +32,9 @@ async def _run_evaluation() -> dict[str, object]:
 @celery_app.task(name="evaluate_predictions_task", bind=True, max_retries=1)
 def evaluate_predictions_task(self) -> dict[str, int]:  # type: ignore[no-untyped-def]
     """Evaluate all eligible pending predictions."""
+    from app.jobs.task_tracker import track_task
+
+    track_task(self.request.id, "evaluate_predictions")
     try:
         result = asyncio.run(_run_evaluation())
         logger.info("Evaluation complete: %s", result)

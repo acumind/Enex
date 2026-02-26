@@ -8,12 +8,12 @@ from datetime import date, datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BusinessRuleViolation, ConflictError, NotFoundError
-from app.models.prediction import Prediction
+from app.models.prediction import Prediction, PredictionOutcome
 from app.repositories.prediction import PredictionRepository
 from app.repositories.predictor import PredictorRepository
 from app.repositories.stock import StockRepository
 from app.schemas.common import PaginatedResponse
-from app.schemas.prediction import PredictionCreate, PredictionResponse
+from app.schemas.prediction import PredictionCreate, PredictionResponse, PredictionUpdate
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +89,33 @@ class PredictionService:
         except Exception:
             logger.warning("Failed to dispatch archive task for prediction %s", prediction.id)
 
+        return PredictionResponse.model_validate(prediction)
+
+    async def update(
+        self, prediction_id: uuid.UUID, data: PredictionUpdate, editor_id: uuid.UUID
+    ) -> PredictionResponse:
+        prediction = await self.pred_repo.get_by_id(prediction_id)
+        if prediction is None:
+            raise NotFoundError("Prediction not found")
+
+        # Block editing evaluated predictions
+        from sqlalchemy import select
+
+        outcome = await self.pred_repo.session.scalar(
+            select(PredictionOutcome).where(PredictionOutcome.prediction_id == prediction_id)
+        )
+        if outcome is not None:
+            raise BusinessRuleViolation("Cannot edit an evaluated prediction")
+
+        update_dict = data.model_dump(exclude_unset=True)
+
+        # Recalculate default_eval_date if dates changed
+        if "prediction_date" in update_dict or "target_date" in update_dict:
+            p_date = update_dict.get("prediction_date", prediction.prediction_date)
+            t_date = update_dict.get("target_date", prediction.target_date)
+            update_dict["default_eval_date"] = _compute_default_eval_date(p_date, t_date)
+
+        prediction = await self.pred_repo.update(prediction, update_dict)
         return PredictionResponse.model_validate(prediction)
 
     async def approve(self, prediction_id: uuid.UUID, reviewer_id: uuid.UUID) -> PredictionResponse:

@@ -56,6 +56,16 @@ class PredictionResponse(BaseModel):
     predictor_slug: str | None = None
 
 
+class PredictionUpdate(BaseModel):
+    target_price: Decimal | None = Field(None, gt=0)
+    price_at_prediction: Decimal | None = Field(None, gt=0)
+    prediction_date: date | None = None
+    target_date: date | None = None
+    source_url: str | None = Field(None, min_length=1, max_length=1000)
+    source_type: SourceType | None = None
+    raw_quote: str | None = None
+
+
 class PredictionApprove(BaseModel):
     pass
 

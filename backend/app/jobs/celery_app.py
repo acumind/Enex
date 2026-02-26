@@ -19,6 +19,7 @@ celery_app.conf.update(
     result_serializer="json",
     timezone="Asia/Kolkata",
     enable_utc=True,
+    result_expires=86400,
 )
 
 celery_app.conf.beat_schedule = {

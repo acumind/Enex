@@ -213,6 +213,9 @@ async def _dispatch_new_prediction_notifications(prediction_id: str) -> int:
 @celery_app.task(name="dispatch_outcome_notifications_task")
 def dispatch_outcome_notifications_task(prediction_ids: list[str]) -> dict[str, int]:
     """Create notifications for users watching stocks with evaluated predictions."""
+    from app.jobs.task_tracker import track_task
+
+    track_task(dispatch_outcome_notifications_task.request.id, "dispatch_outcome_notifications")
     try:
         created = asyncio.run(_dispatch_outcome_notifications(prediction_ids))
         logger.info("Dispatched %d outcome notifications", created)
@@ -225,6 +228,9 @@ def dispatch_outcome_notifications_task(prediction_ids: list[str]) -> dict[str, 
 @celery_app.task(name="dispatch_new_prediction_notifications_task")
 def dispatch_new_prediction_notifications_task(prediction_id: str) -> dict[str, int]:
     """Create notifications for users following the predictor of a new prediction."""
+    from app.jobs.task_tracker import track_task
+
+    track_task(dispatch_new_prediction_notifications_task.request.id, "dispatch_new_prediction_notifications")
     try:
         created = asyncio.run(_dispatch_new_prediction_notifications(prediction_id))
         logger.info("Dispatched %d new-prediction notifications", created)

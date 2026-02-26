@@ -216,6 +216,65 @@ export interface UnreadCountResponse {
   count: number;
 }
 
+// --- Admin types ---
+
+export interface AdminStatsResponse {
+  pending_predictions: number;
+  pending_suggestions: number;
+  total_users: number;
+  total_predictors: number;
+  total_stocks: number;
+  predictions_today: number;
+  predictions_this_week: number;
+}
+
+export interface PredictionUpdate {
+  target_price?: string;
+  price_at_prediction?: string;
+  prediction_date?: string;
+  target_date?: string | null;
+  source_url?: string;
+  source_type?: string;
+  raw_quote?: string | null;
+}
+
+export interface StockCreate {
+  symbol: string;
+  name: string;
+  exchange?: string;
+  bse_code?: string;
+  sector?: string;
+  industry?: string;
+}
+
+export interface StockUpdate {
+  name?: string;
+  bse_code?: string;
+  sector?: string;
+  industry?: string;
+  is_active?: boolean;
+}
+
+export interface AuditLogResponse {
+  id: string;
+  actor_id: string;
+  action: string;
+  entity_type: string;
+  entity_id: string | null;
+  details: Record<string, string> | null;
+  created_at: string;
+  actor_name: string | null;
+}
+
+export interface JobStatusResponse {
+  task_id: string;
+  task_name: string;
+  status: string;
+  result: Record<string, unknown> | null;
+  date_done: string | null;
+  traceback: string | null;
+}
+
 // --- Auth types ---
 
 export interface AuthUser {

@@ -1,3 +1,4 @@
+from app.models.audit_log import AuditLog
 from app.models.base import Base, TimestampMixin
 from app.models.engagement import UserFollowedPredictor, UserWatchlist
 from app.models.notification import Notification
@@ -8,6 +9,7 @@ from app.models.stock import Stock, StockDailyPrice
 from app.models.user import OTPCode, User
 
 __all__ = [
+    "AuditLog",
     "Base",
     "TimestampMixin",
     "Predictor",

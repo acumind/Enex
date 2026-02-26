@@ -96,6 +96,9 @@ async def _run_extraction(suggestion_id: str | None, reviewer_id: str, url: str)
 @celery_app.task(name="extract_prediction_task", bind=True, max_retries=2)
 def extract_prediction_task(self, suggestion_id: str | None, reviewer_id: str, url: str) -> dict[str, str]:  # type: ignore[no-untyped-def]
     """Extract predictions from URL and create DB records."""
+    from app.jobs.task_tracker import track_task
+
+    track_task(self.request.id, "extract_prediction")
     try:
         asyncio.run(_run_extraction(suggestion_id, reviewer_id, url))
         return {"status": "ok", "url": url}

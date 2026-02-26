@@ -23,6 +23,9 @@ async def _run_scorecard_update() -> dict[str, int]:
 @celery_app.task(name="update_scorecards_task", bind=True, max_retries=1)
 def update_scorecards_task(self) -> dict[str, int]:  # type: ignore[no-untyped-def]
     """Recompute all predictor scorecards."""
+    from app.jobs.task_tracker import track_task
+
+    track_task(self.request.id, "update_scorecards")
     try:
         result = asyncio.run(_run_scorecard_update())
         logger.info("Scorecard update complete: %s", result)
