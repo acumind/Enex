@@ -22,6 +22,24 @@ export function Footer() {
             >
               About
             </Link>
+            <Link
+              href="/terms"
+              className="transition-colors hover:text-foreground"
+            >
+              Terms
+            </Link>
+            <Link
+              href="/privacy"
+              className="transition-colors hover:text-foreground"
+            >
+              Privacy
+            </Link>
+            <Link
+              href="/contact"
+              className="transition-colors hover:text-foreground"
+            >
+              Contact
+            </Link>
             <span>&copy; {new Date().getFullYear()} Enex</span>
           </div>
         </div>
