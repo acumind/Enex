@@ -16,8 +16,20 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_SITE_URL || "https://enex.in",
+  ),
   title: "Enex — Analyst Prediction Tracker",
-  description: "Track analyst stock predictions against actual outcomes for Indian equity markets",
+  description:
+    "Track analyst stock predictions against actual outcomes for Indian equity markets",
+  openGraph: {
+    type: "website",
+    siteName: "Enex",
+    locale: "en_IN",
+  },
+  twitter: {
+    card: "summary_large_image",
+  },
 };
 
 export default function RootLayout({

@@ -1,52 +1,40 @@
 "use client";
 
-import { useCallback, useSyncExternalStore } from "react";
+import { useEffect } from "react";
 import { Moon, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
-
-function getSnapshot(): boolean {
-  if (typeof window === "undefined") return false;
-  const stored = localStorage.getItem("theme");
-  return stored === "dark" || (!stored && window.matchMedia("(prefers-color-scheme: dark)").matches);
-}
-
-function getServerSnapshot(): boolean {
-  return false;
-}
-
-function subscribe(callback: () => void): () => void {
-  window.addEventListener("storage", callback);
-  return () => window.removeEventListener("storage", callback);
-}
+import { useThemeStore } from "@/lib/stores";
 
 export function ThemeToggle() {
-  const dark = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  const mode = useThemeStore((s) => s.mode);
+  const setMode = useThemeStore((s) => s.setMode);
 
-  const toggle = useCallback(() => {
-    const next = !document.documentElement.classList.contains("dark");
-    if (next) {
-      document.documentElement.classList.add("dark");
-      localStorage.setItem("theme", "dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-      localStorage.setItem("theme", "light");
-    }
-    // Trigger storage event for useSyncExternalStore
-    window.dispatchEvent(new Event("storage"));
-  }, []);
+  useEffect(() => {
+    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)");
 
-  // Ensure DOM is synced on first render
-  if (typeof window !== "undefined") {
-    if (dark) {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
+    function apply() {
+      const dark =
+        mode === "dark" || (mode === "system" && prefersDark.matches);
+      document.documentElement.classList.toggle("dark", dark);
     }
-  }
+
+    apply();
+    prefersDark.addEventListener("change", apply);
+    return () => prefersDark.removeEventListener("change", apply);
+  }, [mode]);
+
+  const isDark =
+    typeof window !== "undefined"
+      ? document.documentElement.classList.contains("dark")
+      : false;
+
+  const toggle = () => {
+    setMode(isDark ? "light" : "dark");
+  };
 
   return (
     <Button variant="ghost" size="sm" onClick={toggle} aria-label="Toggle theme">
-      {dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+      {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
     </Button>
   );
 }

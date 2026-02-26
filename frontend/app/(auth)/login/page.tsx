@@ -13,7 +13,8 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useAuth } from "@/lib/auth-context";
 import type { OTPVerifyResponse, GoogleAuthResponse } from "@/lib/types";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+// "use client" page — always runs in browser, use proxy path
+const API_BASE = "/api/v1";
 
 type OTPStep = "input" | "verify";
 

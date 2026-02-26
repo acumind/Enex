@@ -8,6 +8,95 @@ from app.jobs.celery_app import celery_app
 logger = logging.getLogger(__name__)
 
 
+async def _send_outcome_emails(
+    session,  # type: ignore[no-untyped-def]
+    user_ids: list,
+    stock_symbol: str,
+    stock_name: str,
+    prediction_id: str,
+) -> None:
+    """Send outcome emails to verified-email users (best-effort)."""
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    if not settings.NOTIFICATION_EMAIL_ENABLED:
+        return
+
+    from sqlalchemy import select
+
+    from app.integrations.email.resend_adapter import ResendAdapter
+    from app.integrations.email.templates import prediction_outcome_email
+    from app.models.prediction import PredictionOutcome
+    from app.models.user import User
+
+    # Fetch outcome status
+    stmt = select(PredictionOutcome.outcome_status).where(PredictionOutcome.prediction_id == prediction_id)
+    result = await session.execute(stmt)
+    row = result.scalar_one_or_none()
+    outcome_status = row if row else "evaluated"
+
+    # Fetch users with verified emails
+    stmt = select(User).where(
+        User.id.in_(user_ids),
+        User.is_email_verified.is_(True),
+        User.email.isnot(None),
+    )
+    result = await session.execute(stmt)
+    users = result.scalars().all()
+
+    if not users:
+        return
+
+    subject, html_body = prediction_outcome_email(stock_symbol, stock_name, outcome_status)
+    adapter = ResendAdapter()
+    for user in users:
+        try:
+            await adapter.send_notification(user.email, subject, html_body)
+        except Exception:
+            logger.exception("Failed to send outcome email to user %s", user.id)
+
+
+async def _send_new_prediction_emails(
+    session,  # type: ignore[no-untyped-def]
+    user_ids: list,
+    predictor_name: str,
+    predictor_slug: str,
+    stock_symbol: str,
+    stock_name: str,
+) -> None:
+    """Send new-prediction emails to verified-email users (best-effort)."""
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    if not settings.NOTIFICATION_EMAIL_ENABLED:
+        return
+
+    from sqlalchemy import select
+
+    from app.integrations.email.resend_adapter import ResendAdapter
+    from app.integrations.email.templates import new_prediction_email
+    from app.models.user import User
+
+    stmt = select(User).where(
+        User.id.in_(user_ids),
+        User.is_email_verified.is_(True),
+        User.email.isnot(None),
+    )
+    result = await session.execute(stmt)
+    users = result.scalars().all()
+
+    if not users:
+        return
+
+    subject, html_body = new_prediction_email(predictor_name, predictor_slug, stock_symbol, stock_name)
+    adapter = ResendAdapter()
+    for user in users:
+        try:
+            await adapter.send_notification(user.email, subject, html_body)
+        except Exception:
+            logger.exception("Failed to send new-prediction email to user %s", user.id)
+
+
 async def _dispatch_outcome_notifications(prediction_ids: list[str]) -> int:
     import uuid
 
@@ -52,6 +141,9 @@ async def _dispatch_outcome_notifications(prediction_ids: list[str]) -> int:
             if notifications:
                 count = await notification_repo.create_bulk(notifications)
                 created += count
+
+            # Send email notifications (best-effort, after in-app notifications)
+            await _send_outcome_emails(session, user_ids, stock.symbol, stock.name, pid)
 
         await session.commit()
 
@@ -109,6 +201,9 @@ async def _dispatch_new_prediction_notifications(prediction_id: str) -> int:
         created = 0
         if notifications:
             created = await notification_repo.create_bulk(notifications)
+
+        # Send email notifications (best-effort, after in-app notifications)
+        await _send_new_prediction_emails(session, user_ids, predictor.name, predictor.slug, stock.symbol, stock.name)
 
         await session.commit()
 

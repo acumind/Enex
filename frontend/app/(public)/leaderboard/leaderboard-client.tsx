@@ -13,6 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { AccuracyBadge } from "@/components/accuracy-badge";
 import { api } from "@/lib/api-client";
+import { useLeaderboardStore } from "@/lib/stores";
 import type { LeaderboardEntry } from "@/lib/types";
 
 const PREDICTOR_TYPES = [
@@ -35,8 +36,10 @@ const PAGE_SIZE = 20;
 export function LeaderboardClient() {
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [type, setType] = useState("all");
-  const [sortBy, setSortBy] = useState("accuracy");
+  const type = useLeaderboardStore((s) => s.predictorType);
+  const setPredictorType = useLeaderboardStore((s) => s.setPredictorType);
+  const sortBy = useLeaderboardStore((s) => s.sortBy);
+  const setSortBy = useLeaderboardStore((s) => s.setSortBy);
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(false);
 
@@ -65,7 +68,7 @@ export function LeaderboardClient() {
   }, [fetchData]);
 
   const handleTypeChange = (value: string) => {
-    setType(value);
+    setPredictorType(value);
     setOffset(0);
   };
 
@@ -83,7 +86,7 @@ export function LeaderboardClient() {
           </TabsList>
         </Tabs>
 
-        <Select value={sortBy} onValueChange={(v) => { setSortBy(v); setOffset(0); }}>
+        <Select value={sortBy} onValueChange={(v) => { setSortBy(v); setOffset(0); }} >
           <SelectTrigger>
             <SelectValue placeholder="Sort by" />
           </SelectTrigger>

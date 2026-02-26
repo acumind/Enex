@@ -10,7 +10,8 @@ import {
 } from "react";
 import type { AuthUser } from "./types";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+// "use client" component — always runs in browser, use proxy path
+const API_BASE = "/api/v1";
 
 interface AuthContextValue {
   user: AuthUser | null;

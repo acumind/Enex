@@ -1,6 +1,10 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import type { PredictorResponse, ScorecardResponse } from "@/lib/types";
+import type {
+  PredictorResponse,
+  ScorecardResponse,
+  SearchResponse,
+} from "@/lib/types";
 import { PredictorProfileClient } from "./predictor-profile-client";
 
 const API_BASE =
@@ -18,6 +22,21 @@ async function fetchJSON<T>(path: string): Promise<T | null> {
   }
 }
 
+export const dynamicParams = true;
+
+export async function generateStaticParams(): Promise<{ slug: string }[]> {
+  try {
+    const res = await fetch(`${API_BASE}/search?q=%25&limit=50`, {
+      next: { revalidate: 3600 },
+    });
+    if (!res.ok) return [];
+    const data: SearchResponse = await res.json();
+    return data.predictors.map((p) => ({ slug: p.slug_or_symbol }));
+  } catch {
+    return [];
+  }
+}
+
 export async function generateMetadata({
   params,
 }: {
@@ -25,12 +44,18 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { slug } = await params;
   const predictor = await fetchJSON<PredictorResponse>(
-    `/predictors/${slug}`
+    `/predictors/${slug}`,
   );
   if (!predictor) return { title: "Predictor — Enex" };
+  const description = `${predictor.name} prediction accuracy, scorecard, and history on Enex.`;
   return {
     title: `${predictor.name} — Enex`,
-    description: `${predictor.name} prediction accuracy, scorecard, and history on Enex.`,
+    description,
+    openGraph: {
+      title: `${predictor.name} — Enex`,
+      description,
+      type: "profile",
+    },
   };
 }
 

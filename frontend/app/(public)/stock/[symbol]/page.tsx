@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import type { StockResponse } from "@/lib/types";
+import type { StockResponse, SearchResponse } from "@/lib/types";
 import { StockClient } from "./stock-client";
 
 const API_BASE =
@@ -18,6 +18,21 @@ async function fetchJSON<T>(path: string): Promise<T | null> {
   }
 }
 
+export const dynamicParams = true;
+
+export async function generateStaticParams(): Promise<{ symbol: string }[]> {
+  try {
+    const res = await fetch(`${API_BASE}/search?q=%25&limit=50`, {
+      next: { revalidate: 3600 },
+    });
+    if (!res.ok) return [];
+    const data: SearchResponse = await res.json();
+    return data.stocks.map((s) => ({ symbol: s.slug_or_symbol }));
+  } catch {
+    return [];
+  }
+}
+
 export async function generateMetadata({
   params,
 }: {
@@ -26,9 +41,15 @@ export async function generateMetadata({
   const { symbol } = await params;
   const stock = await fetchJSON<StockResponse>(`/stocks/${symbol}`);
   if (!stock) return { title: "Stock — Enex" };
+  const description = `Analyst predictions and accuracy for ${stock.name} (${stock.symbol}) on Enex.`;
   return {
     title: `${stock.name} (${stock.symbol}) — Enex`,
-    description: `Analyst predictions and accuracy for ${stock.name} (${stock.symbol}) on Enex.`,
+    description,
+    openGraph: {
+      title: `${stock.name} (${stock.symbol}) — Enex`,
+      description,
+      type: "article",
+    },
   };
 }
 
