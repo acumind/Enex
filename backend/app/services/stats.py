@@ -284,7 +284,20 @@ class StatsService:
             evaluations_this_week=evaluations_this_week,
         )
 
+    def _business_days_ago(self, days: int) -> datetime:
+        """Return a datetime N business days before now (skips weekends)."""
+        now = datetime.now(UTC).replace(tzinfo=None)
+        count = 0
+        current = now
+        while count < days:
+            current -= timedelta(days=1)
+            if current.weekday() < 5:  # Mon-Fri
+                count += 1
+        return current
+
     async def get_admin_alerts(self) -> AdminAlertsResponse:
+        from app.models.stock import StockDailyPrice
+
         alerts: list[AdminAlert] = []
 
         # Check queue sizes
@@ -315,6 +328,47 @@ class StatsService:
                     message=f"High pending suggestion queue: {admin_stats.pending_suggestions}",
                 )
             )
+
+        # Check stale stock prices (>3 business days)
+        try:
+            latest_trade_date = await self.session.scalar(select(func.max(StockDailyPrice.trade_date)))
+            if latest_trade_date is not None:
+                threshold = self._business_days_ago(3).date()
+                if latest_trade_date < threshold:
+                    days_stale = (datetime.now(UTC).replace(tzinfo=None).date() - latest_trade_date).days
+                    msg = f"Stock price data is {days_stale} days stale (last: {latest_trade_date.isoformat()})"
+                    alerts.append(AdminAlert(level="warning", category="data", message=msg))
+        except Exception:
+            logger.warning("Failed to check stale stock prices")
+
+        # Check stale evaluations (>7 days and pending evaluations exist)
+        try:
+            latest_eval = await self.session.scalar(select(func.max(PredictionOutcome.evaluated_at)))
+            if latest_eval is not None:
+                now = datetime.now(UTC).replace(tzinfo=None)
+                eval_age = (now - latest_eval).days
+                if eval_age > 7:
+                    # Check if there are pending evaluations
+                    from sqlalchemy import and_
+
+                    pending_count = (
+                        await self.session.scalar(
+                            select(func.count())
+                            .select_from(Prediction)
+                            .outerjoin(PredictionOutcome, Prediction.id == PredictionOutcome.prediction_id)
+                            .where(and_(Prediction.status == "approved", PredictionOutcome.id.is_(None)))
+                        )
+                        or 0
+                    )
+                    if pending_count > 0:
+                        msg = (
+                            f"Evaluation pipeline may be stalled"
+                            f" ({eval_age} days since last run,"
+                            f" {pending_count} pending)"
+                        )
+                        alerts.append(AdminAlert(level="warning", category="evaluation", message=msg))
+        except Exception:
+            logger.warning("Failed to check stale evaluations")
 
         # Check system health
         health = await self.get_system_health()

@@ -47,6 +47,26 @@ class PredictorRepository(BaseRepository[Predictor]):
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def list_all(
+        self,
+        *,
+        search: str | None = None,
+        type_filter: str | None = None,
+        cursor: datetime | None = None,
+        limit: int = 20,
+    ) -> list[Predictor]:
+        stmt = select(Predictor).order_by(Predictor.created_at.desc())
+        if search:
+            pattern = f"%{search}%"
+            stmt = stmt.where(Predictor.name.ilike(pattern))
+        if type_filter:
+            stmt = stmt.where(Predictor.type == type_filter)
+        if cursor is not None:
+            stmt = stmt.where(Predictor.created_at < cursor)
+        stmt = stmt.limit(limit)
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
     async def list_members(self, parent_id: uuid.UUID) -> list[Predictor]:
         result = await self.session.execute(
             select(Predictor).where(Predictor.parent_id == parent_id).order_by(Predictor.name)

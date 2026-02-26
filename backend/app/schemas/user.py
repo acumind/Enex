@@ -50,3 +50,18 @@ class RoleChange(BaseModel):
 
 class UserBan(BaseModel):
     ban_reason: str = Field(..., min_length=1, max_length=500)
+
+
+class LoginEventResponse(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: uuid.UUID
+    login_method: str
+    ip_address: str | None
+    user_agent: str | None
+    created_at: datetime
+
+
+class ActiveSessionsResponse(BaseModel):
+    refresh_token_count: int
+    login_events: list[LoginEventResponse]

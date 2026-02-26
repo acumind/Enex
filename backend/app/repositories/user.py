@@ -24,10 +24,20 @@ class UserRepository(BaseRepository[User]):
     async def list_users(
         self,
         *,
+        search: str | None = None,
+        role: str | None = None,
+        is_active: bool | None = None,
         cursor: datetime | None = None,
         limit: int = 20,
     ) -> list[User]:
         stmt = select(User).order_by(User.created_at.desc())
+        if search:
+            pattern = f"%{search}%"
+            stmt = stmt.where((User.email.ilike(pattern)) | (User.name.ilike(pattern)))
+        if role is not None:
+            stmt = stmt.where(User.role == role)
+        if is_active is not None:
+            stmt = stmt.where(User.is_active == is_active)
         if cursor is not None:
             stmt = stmt.where(User.created_at < cursor)
         stmt = stmt.limit(limit)

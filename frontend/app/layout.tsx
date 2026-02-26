@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { AnnouncementBanner } from "@/components/announcement-banner";
 import { Providers } from "@/components/providers";
 import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
@@ -44,6 +45,7 @@ export default function RootLayout({
       >
         <Providers>
           <div className="flex min-h-screen flex-col">
+            <AnnouncementBanner />
             <Navbar />
             <main className="flex-1">{children}</main>
             <Footer />

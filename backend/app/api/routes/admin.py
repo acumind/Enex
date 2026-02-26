@@ -26,7 +26,13 @@ from app.schemas.audit_log import AuditLogResponse
 from app.schemas.common import PaginatedResponse
 from app.schemas.notification import BroadcastRequest, BroadcastResponse
 from app.schemas.outcome import EvaluationTriggerResponse
-from app.schemas.prediction import PredictionCreate, PredictionResponse, PredictionUpdate
+from app.schemas.prediction import (
+    BulkStatusChangeRequest,
+    BulkStatusChangeResponse,
+    PredictionCreate,
+    PredictionResponse,
+    PredictionUpdate,
+)
 from app.schemas.predictor import PredictorCreate, PredictorResponse, PredictorUpdate
 from app.schemas.runtime_config import RuntimeConfigResponse, RuntimeConfigUpdate
 from app.schemas.stats import (
@@ -38,7 +44,14 @@ from app.schemas.stats import (
 )
 from app.schemas.stock import StockCreate, StockResponse, StockUpdate
 from app.schemas.suggestion import BulkExtractRequest, BulkExtractResponse, SuggestionResponse
-from app.schemas.user import RoleChange, UserBan, UserResponse
+from app.schemas.user import (
+    ActiveSessionsResponse,
+    LoginEventResponse,
+    RoleChange,
+    UserBan,
+    UserDetailResponse,
+    UserResponse,
+)
 from app.services.audit_log import AuditLogService
 from app.services.evaluation import EvaluationService
 from app.services.notification import NotificationService
@@ -83,6 +96,18 @@ async def create_predictor(
     await audit.record(user.id, "predictor.create", "predictor", result.id, {"name": result.name})
     await db.commit()
     return result
+
+
+@router.get("/predictors", response_model=PaginatedResponse[PredictorResponse])
+async def list_predictors(
+    cursor: datetime | None = Query(None),
+    limit: int = Query(20, ge=1, le=100),
+    search: str | None = Query(None),
+    type: str | None = Query(None),
+    user: User = Depends(_admin),
+    service: PredictorService = Depends(get_predictor_service),
+) -> PaginatedResponse[PredictorResponse]:
+    return await service.list_all(search=search, type_filter=type, cursor=cursor, limit=limit)
 
 
 @router.patch("/predictors/{predictor_id}", response_model=PredictorResponse)
@@ -228,6 +253,47 @@ async def reject_prediction(
     return result
 
 
+# --- Bulk Prediction Actions ---
+
+
+@router.post("/predictions/bulk-approve", response_model=BulkStatusChangeResponse)
+async def bulk_approve_predictions(
+    data: BulkStatusChangeRequest,
+    user: User = Depends(_moderator_or_admin),
+    service: PredictionService = Depends(get_prediction_service),
+    audit: AuditLogService = Depends(get_audit_log_service),
+    db: AsyncSession = Depends(get_db),
+) -> BulkStatusChangeResponse:
+    updated, failed, errors = await service.bulk_approve(data.prediction_ids, reviewer_id=user.id)
+    await audit.record(
+        user.id,
+        "prediction.bulk_approve",
+        "prediction",
+        details={"count": updated, "failed": failed},
+    )
+    await db.commit()
+    return BulkStatusChangeResponse(updated=updated, failed=failed, errors=errors)
+
+
+@router.post("/predictions/bulk-reject", response_model=BulkStatusChangeResponse)
+async def bulk_reject_predictions(
+    data: BulkStatusChangeRequest,
+    user: User = Depends(_moderator_or_admin),
+    service: PredictionService = Depends(get_prediction_service),
+    audit: AuditLogService = Depends(get_audit_log_service),
+    db: AsyncSession = Depends(get_db),
+) -> BulkStatusChangeResponse:
+    updated, failed, errors = await service.bulk_reject(data.prediction_ids, reviewer_id=user.id)
+    await audit.record(
+        user.id,
+        "prediction.bulk_reject",
+        "prediction",
+        details={"count": updated, "failed": failed},
+    )
+    await db.commit()
+    return BulkStatusChangeResponse(updated=updated, failed=failed, errors=errors)
+
+
 # --- Suggestions ---
 
 
@@ -309,10 +375,29 @@ async def bulk_extract(
 async def list_users(
     cursor: datetime | None = Query(None),
     limit: int = Query(20, ge=1, le=100),
+    search: str | None = Query(None),
+    role: str | None = Query(None),
+    is_active: bool | None = Query(None),
     user: User = Depends(_admin),
     service: UserService = Depends(get_user_service),
 ) -> PaginatedResponse[UserResponse]:
-    return await service.list_users(cursor=cursor, limit=limit)
+    return await service.list_users(search=search, role=role, is_active=is_active, cursor=cursor, limit=limit)
+
+
+@router.get("/users/{user_id}", response_model=UserDetailResponse)
+async def get_user_detail(
+    user_id: uuid.UUID,
+    user: User = Depends(_admin),
+    service: UserService = Depends(get_user_service),
+) -> UserDetailResponse:
+    from app.core.exceptions import NotFoundError
+    from app.repositories.user import UserRepository
+
+    repo = UserRepository(service.repo.session)
+    target = await repo.get_by_id(user_id)
+    if target is None:
+        raise NotFoundError("User not found")
+    return UserDetailResponse.model_validate(target)
 
 
 @router.patch("/users/{user_id}/role", response_model=UserResponse)
@@ -357,6 +442,58 @@ async def unban_user(
     await audit.record(user.id, "user.unban", "user", user_id)
     await db.commit()
     return result
+
+
+@router.get("/users/{user_id}/sessions", response_model=ActiveSessionsResponse)
+async def get_user_sessions(
+    user_id: uuid.UUID,
+    user: User = Depends(_admin),
+    db: AsyncSession = Depends(get_db),
+) -> ActiveSessionsResponse:
+    import redis.asyncio as aioredis
+
+    from app.core.config import get_settings
+    from app.repositories.login_event import LoginEventRepository
+
+    login_repo = LoginEventRepository(db)
+    events = await login_repo.list_for_user(user_id, limit=20)
+
+    # Count active refresh tokens from Redis
+    settings = get_settings()
+    refresh_count = 0
+    try:
+        r = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+        try:
+            refresh_count = await r.scard(f"user_refresh_tokens:{user_id}")
+        finally:
+            await r.aclose()
+    except Exception:
+        pass
+
+    return ActiveSessionsResponse(
+        refresh_token_count=refresh_count,
+        login_events=[LoginEventResponse.model_validate(e) for e in events],
+    )
+
+
+@router.post("/users/{user_id}/revoke-sessions", response_model=UserResponse)
+async def revoke_user_sessions(
+    user_id: uuid.UUID,
+    user: User = Depends(_admin),
+    service: UserService = Depends(get_user_service),
+    audit: AuditLogService = Depends(get_audit_log_service),
+    db: AsyncSession = Depends(get_db),
+) -> UserResponse:
+    from app.core.exceptions import NotFoundError
+    from app.core.security import revoke_all_refresh_tokens
+
+    target = await service.repo.get_by_id(user_id)
+    if target is None:
+        raise NotFoundError("User not found")
+    await revoke_all_refresh_tokens(user_id)
+    await audit.record(user.id, "user.revoke_sessions", "user", user_id)
+    await db.commit()
+    return UserResponse.model_validate(target)
 
 
 # --- Evaluation ---

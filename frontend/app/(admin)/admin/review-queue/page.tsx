@@ -3,6 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api-client";
 import type {
+  BulkStatusChangeResponse,
   PaginatedResponse,
   PredictionResponse,
   PredictionUpdate,
@@ -214,6 +215,8 @@ export default function ReviewQueuePage() {
   const [cursor, setCursor] = useState<string | null>(null);
   const [editingPrediction, setEditingPrediction] =
     useState<PredictionResponse | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkResult, setBulkResult] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
   const { data, isLoading, error } = useQuery({
@@ -242,6 +245,55 @@ export default function ReviewQueuePage() {
       queryClient.invalidateQueries({ queryKey: ["review-queue"] }),
   });
 
+  const bulkApproveMutation = useMutation({
+    mutationFn: (ids: string[]) =>
+      api.post<BulkStatusChangeResponse>("/admin/predictions/bulk-approve", {
+        prediction_ids: ids,
+      }),
+    onSuccess: (result) => {
+      setBulkResult(
+        `Approved ${result.updated}${result.failed ? `, ${result.failed} failed` : ""}`,
+      );
+      setSelectedIds(new Set());
+      queryClient.invalidateQueries({ queryKey: ["review-queue"] });
+    },
+  });
+
+  const bulkRejectMutation = useMutation({
+    mutationFn: (ids: string[]) =>
+      api.post<BulkStatusChangeResponse>("/admin/predictions/bulk-reject", {
+        prediction_ids: ids,
+      }),
+    onSuccess: (result) => {
+      setBulkResult(
+        `Rejected ${result.updated}${result.failed ? `, ${result.failed} failed` : ""}`,
+      );
+      setSelectedIds(new Set());
+      queryClient.invalidateQueries({ queryKey: ["review-queue"] });
+    },
+  });
+
+  const toggleSelection = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    if (!data) return;
+    if (selectedIds.size === data.items.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(data.items.map((p) => p.id)));
+    }
+  };
+
+  const bulkPending =
+    bulkApproveMutation.isPending || bulkRejectMutation.isPending;
+
   return (
     <div className="container mx-auto max-w-4xl py-8 px-4">
       <h1 className="text-2xl font-bold mb-6">Review Queue</h1>
@@ -251,8 +303,71 @@ export default function ReviewQueuePage() {
         <p className="text-destructive">Failed to load review queue.</p>
       )}
 
+      {bulkResult && (
+        <div className="mb-4 rounded border px-4 py-2 text-sm bg-muted">
+          {bulkResult}
+          <button
+            className="ml-2 text-muted-foreground hover:text-foreground"
+            onClick={() => setBulkResult(null)}
+          >
+            &times;
+          </button>
+        </div>
+      )}
+
       {data && data.items.length === 0 && (
         <p className="text-muted-foreground">No predictions pending review.</p>
+      )}
+
+      {data && data.items.length > 0 && (
+        <div className="flex items-center gap-2 mb-3">
+          <input
+            type="checkbox"
+            checked={selectedIds.size === data.items.length}
+            onChange={toggleAll}
+            className="h-4 w-4"
+          />
+          <span className="text-sm text-muted-foreground">Select All</span>
+        </div>
+      )}
+
+      {/* Floating bulk action bar */}
+      {selectedIds.size > 0 && (
+        <div className="sticky top-0 z-10 mb-3 flex items-center gap-3 rounded border bg-background px-4 py-3 shadow-sm">
+          <span className="text-sm font-medium">
+            {selectedIds.size} selected
+          </span>
+          <Button
+            size="sm"
+            onClick={() =>
+              bulkApproveMutation.mutate(Array.from(selectedIds))
+            }
+            disabled={bulkPending}
+          >
+            {bulkApproveMutation.isPending
+              ? "Approving..."
+              : `Approve Selected (${selectedIds.size})`}
+          </Button>
+          <Button
+            size="sm"
+            variant="destructive"
+            onClick={() =>
+              bulkRejectMutation.mutate(Array.from(selectedIds))
+            }
+            disabled={bulkPending}
+          >
+            {bulkRejectMutation.isPending
+              ? "Rejecting..."
+              : `Reject Selected (${selectedIds.size})`}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setSelectedIds(new Set())}
+          >
+            Clear
+          </Button>
+        </div>
       )}
 
       <div className="space-y-3">
@@ -260,10 +375,18 @@ export default function ReviewQueuePage() {
           <Card key={prediction.id}>
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-base">
-                  Target: &#8377;{prediction.target_price} (Upside:{" "}
-                  {prediction.upside_pct}%)
-                </CardTitle>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.has(prediction.id)}
+                    onChange={() => toggleSelection(prediction.id)}
+                    className="h-4 w-4"
+                  />
+                  <CardTitle className="text-base">
+                    Target: &#8377;{prediction.target_price} (Upside:{" "}
+                    {prediction.upside_pct}%)
+                  </CardTitle>
+                </div>
                 <div className="flex gap-2">
                   <Badge variant="secondary">
                     {prediction.extraction_method}

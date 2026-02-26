@@ -187,7 +187,27 @@ export default function AdminPage() {
           </Card>
         </Link>
       </div>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+        <Link href="/admin/users">
+          <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
+            <CardContent className="pt-6 text-center">
+              <p className="font-medium">User Management</p>
+              <p className="text-sm text-muted-foreground">
+                Search, roles, ban/unban
+              </p>
+            </CardContent>
+          </Card>
+        </Link>
+        <Link href="/admin/predictors">
+          <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
+            <CardContent className="pt-6 text-center">
+              <p className="font-medium">Predictor Management</p>
+              <p className="text-sm text-muted-foreground">
+                List, search, edit predictors
+              </p>
+            </CardContent>
+          </Card>
+        </Link>
         <Link href="/admin/health">
           <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
             <CardContent className="pt-6 text-center">
@@ -208,6 +228,8 @@ export default function AdminPage() {
             </CardContent>
           </Card>
         </Link>
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
         <Link href="/admin/config">
           <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
             <CardContent className="pt-6 text-center">

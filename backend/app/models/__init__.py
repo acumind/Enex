@@ -1,6 +1,7 @@
 from app.models.audit_log import AuditLog
 from app.models.base import Base, TimestampMixin
 from app.models.engagement import UserFollowedPredictor, UserWatchlist
+from app.models.login_event import LoginEvent
 from app.models.notification import Notification
 from app.models.prediction import Prediction, PredictionOutcome, PredictionSuggestion
 from app.models.predictor import Predictor
@@ -13,6 +14,7 @@ __all__ = [
     "AuditLog",
     "Base",
     "TimestampMixin",
+    "LoginEvent",
     "Predictor",
     "Stock",
     "StockDailyPrice",

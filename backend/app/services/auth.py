@@ -27,6 +27,7 @@ from app.core.security import (
 from app.integrations.email.resend_adapter import ResendAdapter
 from app.integrations.oauth.google_verifier import GoogleUserInfo, GoogleVerifier
 from app.integrations.sms.msg91_adapter import MSG91Adapter
+from app.models.login_event import LoginEvent
 from app.models.user import OTPCode, User
 from app.repositories.otp import OTPRepository
 from app.repositories.user import UserRepository
@@ -116,7 +117,28 @@ class AuthService:
     # OTP Verify
     # ------------------------------------------------------------------
 
-    async def verify_otp(self, data: OTPVerifyRequest) -> tuple[OTPVerifyResponse, str, str]:
+    async def _record_login(
+        self,
+        user_id: uuid.UUID,
+        method: str,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
+    ) -> None:
+        event = LoginEvent(
+            user_id=user_id,
+            login_method=method,
+            ip_address=ip_address,
+            user_agent=user_agent[:500] if user_agent else None,
+        )
+        self.session.add(event)
+        await self.session.flush()
+
+    async def verify_otp(
+        self,
+        data: OTPVerifyRequest,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
+    ) -> tuple[OTPVerifyResponse, str, str]:
         """Verify OTP and return (response, refresh_token, jti)."""
         settings = get_settings()
 
@@ -164,6 +186,9 @@ class AuthService:
         # Update last login
         await self.user_repo.update(user, {"last_login_at": func.now()})
 
+        # Record login event
+        await self._record_login(user.id, "otp", ip_address, user_agent)
+
         user_response = AuthUserResponse.model_validate(user)
         return (
             OTPVerifyResponse(access_token=access_token, user=user_response),
@@ -175,7 +200,12 @@ class AuthService:
     # Google Login
     # ------------------------------------------------------------------
 
-    async def google_login(self, data: GoogleAuthRequest) -> tuple[GoogleAuthResponse, str, str]:
+    async def google_login(
+        self,
+        data: GoogleAuthRequest,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
+    ) -> tuple[GoogleAuthResponse, str, str]:
         """Verify Google token and return (response, refresh_token, jti)."""
         # Try id_token first, fallback to access_token
         google_user = None
@@ -200,6 +230,9 @@ class AuthService:
 
         # Update last login
         await self.user_repo.update(user, {"last_login_at": func.now()})
+
+        # Record login event
+        await self._record_login(user.id, "google", ip_address, user_agent)
 
         user_response = AuthUserResponse.model_validate(user)
         return (

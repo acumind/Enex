@@ -78,3 +78,13 @@ class ReviewQueueParams(BaseModel):
     status: PredictionStatus = PredictionStatus.pending_review
     cursor: datetime | None = None
     limit: int = Field(default=20, ge=1, le=100)
+
+
+class BulkStatusChangeRequest(BaseModel):
+    prediction_ids: list[uuid.UUID] = Field(min_length=1, max_length=100)
+
+
+class BulkStatusChangeResponse(BaseModel):
+    updated: int
+    failed: int
+    errors: list[str]

@@ -79,6 +79,23 @@ class PredictorService:
         await self.repo.update(predictor, update_data)
         return PredictorResponse.model_validate(predictor)
 
+    async def list_all(
+        self,
+        *,
+        search: str | None = None,
+        type_filter: str | None = None,
+        cursor: datetime | None = None,
+        limit: int = 20,
+    ) -> PaginatedResponse[PredictorResponse]:
+        predictors = await self.repo.list_all(search=search, type_filter=type_filter, cursor=cursor, limit=limit + 1)
+        has_more = len(predictors) > limit
+        if has_more:
+            predictors = predictors[:limit]
+
+        items = [PredictorResponse.model_validate(p) for p in predictors]
+        next_cursor = items[-1].created_at if has_more and items else None
+        return PaginatedResponse[PredictorResponse](items=items, next_cursor=next_cursor, has_more=has_more)
+
     async def get_by_slug(self, slug: str) -> PredictorResponse:
         predictor = await self.repo.get_by_slug(slug)
         if predictor is None:

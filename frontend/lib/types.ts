@@ -347,6 +347,67 @@ export interface BroadcastResponse {
   message: string;
 }
 
+// --- Login History & Sessions ---
+
+export interface LoginEventResponse {
+  id: string;
+  login_method: string;
+  ip_address: string | null;
+  user_agent: string | null;
+  created_at: string;
+}
+
+export interface ActiveSessionsResponse {
+  refresh_token_count: number;
+  login_events: LoginEventResponse[];
+}
+
+// --- Predictor Admin ---
+
+export interface PredictorAdminUpdate {
+  name?: string;
+  type?: string;
+  description?: string;
+  website?: string;
+  is_active?: boolean;
+}
+
+// --- Bulk Prediction Actions ---
+
+export interface BulkStatusChangeRequest {
+  prediction_ids: string[];
+}
+
+export interface BulkStatusChangeResponse {
+  updated: number;
+  failed: number;
+  errors: string[];
+}
+
+// --- Announcement ---
+
+export interface AnnouncementResponse {
+  text: string;
+  type: string;
+}
+
+// --- User Detail ---
+
+export interface UserDetailResponse {
+  id: string;
+  email: string | null;
+  phone: string | null;
+  name: string | null;
+  avatar_url: string | null;
+  role: string;
+  is_email_verified: boolean;
+  is_phone_verified: boolean;
+  auth_methods: string[];
+  is_active: boolean;
+  created_at: string;
+  last_login_at: string | null;
+}
+
 // --- Auth types ---
 
 export interface AuthUser {

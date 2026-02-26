@@ -147,6 +147,32 @@ class PredictionService:
         prediction = await self.pred_repo.reject(prediction, reviewer_id)
         return PredictionResponse.model_validate(prediction)
 
+    async def bulk_approve(self, prediction_ids: list[uuid.UUID], reviewer_id: uuid.UUID) -> tuple[int, int, list[str]]:
+        updated = 0
+        failed = 0
+        errors: list[str] = []
+        for pid in prediction_ids:
+            try:
+                await self.approve(pid, reviewer_id=reviewer_id)
+                updated += 1
+            except Exception as e:
+                failed += 1
+                errors.append(f"{pid}: {e}")
+        return updated, failed, errors
+
+    async def bulk_reject(self, prediction_ids: list[uuid.UUID], reviewer_id: uuid.UUID) -> tuple[int, int, list[str]]:
+        updated = 0
+        failed = 0
+        errors: list[str] = []
+        for pid in prediction_ids:
+            try:
+                await self.reject(pid, reviewer_id=reviewer_id)
+                updated += 1
+            except Exception as e:
+                failed += 1
+                errors.append(f"{pid}: {e}")
+        return updated, failed, errors
+
     async def list_review_queue(
         self,
         *,

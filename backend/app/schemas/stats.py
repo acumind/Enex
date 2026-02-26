@@ -67,6 +67,11 @@ class EvalDashboardResponse(BaseModel):
     evaluations_this_week: int
 
 
+class AnnouncementResponse(BaseModel):
+    text: str
+    type: str
+
+
 class AdminAlert(BaseModel):
     level: str = Field(description="warning or critical")
     category: str = Field(description="health, queue, or evaluation")

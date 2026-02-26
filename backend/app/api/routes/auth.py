@@ -1,6 +1,6 @@
 """Authentication routes: OTP, Google OAuth, refresh, logout, profile."""
 
-from fastapi import APIRouter, Cookie, Depends, Response
+from fastapi import APIRouter, Cookie, Depends, Request, Response
 from starlette import status
 
 from app.api.deps import get_auth_service
@@ -63,10 +63,15 @@ async def send_otp(
 @router.post("/otp/verify", response_model=OTPVerifyResponse)
 async def verify_otp(
     data: OTPVerifyRequest,
+    request: Request,
     response: Response,
     service: AuthService = Depends(get_auth_service),
 ) -> OTPVerifyResponse:
-    result, refresh_token, _jti = await service.verify_otp(data)
+    result, refresh_token, _jti = await service.verify_otp(
+        data,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
     _set_refresh_cookie(response, refresh_token)
     return result
 
@@ -74,10 +79,15 @@ async def verify_otp(
 @router.post("/google", response_model=GoogleAuthResponse)
 async def google_login(
     data: GoogleAuthRequest,
+    request: Request,
     response: Response,
     service: AuthService = Depends(get_auth_service),
 ) -> GoogleAuthResponse:
-    result, refresh_token, _jti = await service.google_login(data)
+    result, refresh_token, _jti = await service.google_login(
+        data,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
     _set_refresh_cookie(response, refresh_token)
     return result
 

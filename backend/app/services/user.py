@@ -18,10 +18,15 @@ class UserService:
     async def list_users(
         self,
         *,
+        search: str | None = None,
+        role: str | None = None,
+        is_active: bool | None = None,
         cursor: datetime | None = None,
         limit: int = 20,
     ) -> PaginatedResponse[UserResponse]:
-        users = await self.repo.list_users(cursor=cursor, limit=limit + 1)
+        users = await self.repo.list_users(
+            search=search, role=role, is_active=is_active, cursor=cursor, limit=limit + 1
+        )
         has_more = len(users) > limit
         if has_more:
             users = users[:limit]

@@ -31,6 +31,14 @@ class PredictorUpdate(BaseModel):
     is_verified: bool | None = None
 
 
+class PredictorAdminUpdate(BaseModel):
+    name: str | None = Field(None, min_length=1, max_length=200)
+    type: PredictorType | None = None
+    description: str | None = None
+    website: str | None = Field(None, max_length=500)
+    is_active: bool | None = None
+
+
 class PredictorResponse(BaseModel):
     model_config = {"from_attributes": True}
 
