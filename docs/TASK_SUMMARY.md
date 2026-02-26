@@ -2,7 +2,7 @@
 
 > Living document tracking sprint-wise completion, observations, and guidance for future implementation.
 >
-> Last updated: 2026-02-27
+> Last updated: 2026-02-26
 
 ---
 
@@ -1342,6 +1342,109 @@ The export functions use `await session.execute()` to fetch results, then iterat
 #### 5. Notification broadcast batches at 500 to avoid memory pressure
 
 `NotificationService.broadcast()` queries all matching user IDs upfront (lightweight UUID list), then creates `Notification` objects in batches of 500 via `create_bulk()`. Each batch is flushed to the database before the next batch starts, keeping memory usage bounded. The route-level `db.commit()` finalizes all batches in a single transaction.
+
+---
+
+## Sprint 10: Admin Operations & User Management (Completed)
+
+### Objective
+
+Add six admin features for full operational control before production launch: user management with search/filter/sessions, predictor management with search/filter, login event tracking, bulk prediction approve/reject, stale data alerts, and a runtime-config-driven announcement banner.
+
+### Tasks Completed
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 1 | `LoginEvent` model + migration | Done | UUID PK (server-default `gen_random_uuid()`), FK to `users.id`, `login_method` (otp/google), `ip_address` (String(45) for IPv6), `user_agent` (String(500)), indexed on `user_id` |
+| 2 | Announcement config seeds in migration | Done | Two `runtime_config` rows: `announcement_text` (empty = hidden), `announcement_type` (info/warning/critical) — seeded in same migration as login_events |
+| 3 | Login event recording in auth service | Done | `AuthService._record_login()` creates `LoginEvent` after successful OTP verify or Google login; user-agent truncated to 500 chars |
+| 4 | Request context in auth routes | Done | Added `request: Request` to OTP verify and Google login routes; pass `request.client.host` and `user-agent` header to service |
+| 5 | User search/filter (repository + service) | Done | `list_users()` extended with `search` (ilike on email/name), `role` (exact match), `is_active` (bool filter) — all optional, composable |
+| 6 | User detail endpoint | Done | `GET /admin/users/{user_id}` returns `UserDetailResponse` with verification flags and auth methods |
+| 7 | Login history & sessions endpoint | Done | `GET /admin/users/{user_id}/sessions` — `LoginEventRepository.list_for_user()` (last 20 events) + Redis `SCARD user_refresh_tokens:{user_id}` for active token count |
+| 8 | Session revocation endpoint | Done | `POST /admin/users/{user_id}/revoke-sessions` — calls `revoke_all_refresh_tokens()` from `core.security`, audit logged |
+| 9 | Predictor admin list (repository + service) | Done | `PredictorRepository.list_all()` with `search` (ilike on name), `type_filter` (exact match), cursor pagination; `PredictorService.list_all()` wraps with `PaginatedResponse` |
+| 10 | Predictor admin list endpoint | Done | `GET /admin/predictors?search=&type=&cursor=&limit=` — reuses existing `PATCH /admin/predictors/{id}` for editing |
+| 11 | Stale stock price alert | Done | `get_admin_alerts()` queries `MAX(trade_date)` from `stock_daily_prices`; if older than 3 business days → warning with day count |
+| 12 | Stale evaluation alert | Done | Queries `MAX(evaluated_at)` from `prediction_outcomes`; if >7 days old AND pending evaluations exist → warning |
+| 13 | Business day calculation | Done | `StatsService._business_days_ago()` — iterates backwards skipping weekends (Saturday/Sunday) |
+| 14 | Bulk prediction schemas | Done | `BulkStatusChangeRequest` (list of UUIDs, 1-100), `BulkStatusChangeResponse` (updated, failed, errors list) |
+| 15 | Bulk approve/reject service methods | Done | `PredictionService.bulk_approve()` / `bulk_reject()` — loops through IDs, calls existing `approve()`/`reject()` per item, collects successes and failures |
+| 16 | Bulk prediction endpoints | Done | `POST /admin/predictions/bulk-approve`, `POST /admin/predictions/bulk-reject` — moderator_or_admin, audit logged with counts |
+| 17 | Public announcement endpoint | Done | `GET /announcement` (no auth) on health router — reads `announcement_text` and `announcement_type` from `RuntimeConfigService` (Redis-cached) |
+| 18 | `AnnouncementResponse` schema | Done | `text: str`, `type: str` in `schemas/stats.py` |
+| 19 | User schemas | Done | `LoginEventResponse` (id, login_method, ip_address, user_agent, created_at), `ActiveSessionsResponse` (refresh_token_count, login_events list) |
+| 20 | `PredictorAdminUpdate` schema | Done | Optional fields: name, type, description, website, is_active |
+| 21 | Frontend types | Done | 7 new interfaces: `LoginEventResponse`, `ActiveSessionsResponse`, `PredictorAdminUpdate`, `BulkStatusChangeRequest`, `BulkStatusChangeResponse`, `AnnouncementResponse`, `UserDetailResponse` |
+| 22 | User Management page (frontend) | Done | Search bar + role filter + active filter, users table with name/email/role/active/last-login/created/actions, role change dialog, ban/unban buttons, user detail dialog with login history and session revocation |
+| 23 | Predictor Management page (frontend) | Done | Search bar + type filter dropdown, predictors table with name/type/slug/verified/created/edit, edit dialog (name, bio, website, verified toggle) |
+| 24 | Bulk actions in review queue (frontend) | Done | Checkbox column per prediction, "Select All" checkbox, sticky floating action bar when items selected ("Approve Selected (N)" / "Reject Selected (N)" / "Clear"), result toast with counts |
+| 25 | Announcement banner component (frontend) | Done | `AnnouncementBanner` — fetches `GET /api/v1/announcement`, renders above Navbar if text non-empty, styled by type (blue/yellow/red), dismissible per session via `localStorage` with text hash key |
+| 26 | Admin dashboard quick-action cards | Done | Added "User Management" and "Predictor Management" cards to dashboard quick-actions grid |
+
+### Files Created (6)
+
+| File | Purpose |
+|------|---------|
+| `backend/app/models/login_event.py` | LoginEvent ORM model (UUID PK, FK users, login_method, ip/ua) |
+| `backend/app/repositories/login_event.py` | Repository with `list_for_user()` (recent events, desc by created_at) |
+| `backend/migrations/versions/31ce9a97f0d5_add_login_events_table.py` | Migration: login_events table + 2 announcement config seeds |
+| `frontend/app/(admin)/admin/users/page.tsx` | User Management page with search, filters, detail dialog, sessions |
+| `frontend/app/(admin)/admin/predictors/page.tsx` | Predictor Management page with search, type filter, edit dialog |
+| `frontend/components/announcement-banner.tsx` | Dismissible site-wide announcement banner component |
+
+### Files Modified (19)
+
+| File | Change |
+|------|--------|
+| `backend/app/models/__init__.py` | Registered `LoginEvent` |
+| `backend/app/services/auth.py` | Added `_record_login()` helper, updated `verify_otp()` and `google_login()` signatures with `ip_address`/`user_agent` params |
+| `backend/app/api/routes/auth.py` | Added `request: Request` param to OTP verify and Google login; pass client host and user-agent to service |
+| `backend/app/repositories/user.py` | Extended `list_users()` with `search`, `role`, `is_active` filters |
+| `backend/app/services/user.py` | Pass new filter params through to repository |
+| `backend/app/repositories/predictor.py` | Added `list_all()` with search/type_filter/cursor/limit |
+| `backend/app/services/predictor.py` | Added `list_all()` returning `PaginatedResponse[PredictorResponse]` |
+| `backend/app/schemas/predictor.py` | Added `PredictorAdminUpdate` schema |
+| `backend/app/schemas/prediction.py` | Added `BulkStatusChangeRequest`, `BulkStatusChangeResponse` |
+| `backend/app/schemas/user.py` | Added `LoginEventResponse`, `ActiveSessionsResponse` |
+| `backend/app/schemas/stats.py` | Added `AnnouncementResponse` |
+| `backend/app/services/prediction.py` | Added `bulk_approve()`, `bulk_reject()` methods |
+| `backend/app/services/stats.py` | Added `_business_days_ago()`, extended `get_admin_alerts()` with stale price and stale evaluation checks |
+| `backend/app/api/routes/admin.py` | 10 new endpoints: user detail, user sessions, revoke sessions, predictor list, bulk approve, bulk reject; extended user list with search/role/is_active params |
+| `backend/app/api/routes/health.py` | Added `GET /announcement` public endpoint |
+| `frontend/lib/types.ts` | Added 7 new interfaces |
+| `frontend/app/(admin)/admin/review-queue/page.tsx` | Added bulk selection (checkbox per item, select all, floating action bar with approve/reject selected) |
+| `frontend/app/(admin)/admin/page.tsx` | Added User Management and Predictor Management quick-action cards |
+| `frontend/app/layout.tsx` | Added `AnnouncementBanner` above `Navbar` |
+
+### Test Results
+
+- **435 backend tests passing** (unchanged — new features use existing patterns, admin-only endpoints)
+- **ruff check**: clean
+- **tsc --noEmit**: clean
+- **`next build`**: clean (2 new admin pages, all routes compile)
+
+### Observations & Design Notes
+
+#### 1. Login events are append-only, not linked to specific refresh tokens
+
+`LoginEvent` records track when a user authenticated (OTP or Google), but don't reference specific refresh token JTIs. This keeps the model simple — login history is for auditing "when did this user sign in?", while session management uses the existing Redis `user_refresh_tokens:{user_id}` set for token counting and `revoke_all_refresh_tokens()` for revocation. If per-session revocation is needed later, a `session_id` column can be added.
+
+#### 2. Bulk approve/reject reuses single-item methods for correctness
+
+`bulk_approve()` and `bulk_reject()` loop through prediction IDs and call `approve()`/`reject()` individually rather than doing a batch SQL update. This ensures each prediction goes through the same validation (status check, notification dispatch) as single-item operations. Failures are collected rather than aborting — the response reports both `updated` and `failed` counts with per-item error messages.
+
+#### 3. Stale data alerts use business-day-aware thresholds
+
+The stock price staleness check uses `_business_days_ago(3)` rather than a simple 3-day offset. This avoids false alerts over weekends — Indian markets are closed Saturday/Sunday, so Friday's data is still fresh on Monday morning. The evaluation staleness check uses calendar days (7) since evaluations can theoretically run any day.
+
+#### 4. Announcement banner uses content-based dismissal keys
+
+The banner stores a dismissal flag in `localStorage` keyed by a hash of the announcement text (`announcement_dismissed_{hash}`). This means if an admin changes the announcement text, the banner reappears even if the user previously dismissed it. Clearing the text hides the banner entirely (no fetch overhead — the empty check happens client-side).
+
+#### 5. User search filter uses OR across email and name
+
+The `search` parameter in `list_users()` applies `ilike` on both `User.email` and `User.name` with OR semantics. This is intentional — admins typically search by partial email or name and don't know which field contains the match. The `role` and `is_active` filters use AND with the search, so `?search=test&role=admin` finds admins matching "test".
 
 ---
 
