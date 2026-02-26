@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class NotificationResponse(BaseModel):
@@ -21,3 +21,15 @@ class NotificationResponse(BaseModel):
 
 class UnreadCountResponse(BaseModel):
     count: int
+
+
+class BroadcastRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    message: str = Field(min_length=1, max_length=2000)
+    type: str = Field(default="system")
+    role_filter: str | None = None
+
+
+class BroadcastResponse(BaseModel):
+    recipients: int
+    message: str

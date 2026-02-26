@@ -13,6 +13,7 @@ from app.services.notification import NotificationService
 from app.services.prediction import PredictionService
 from app.services.predictor import PredictorService
 from app.services.price_fetcher import PriceFetcherService
+from app.services.runtime_config import RuntimeConfigService
 from app.services.stats import StatsService
 from app.services.stock import StockService
 from app.services.suggestion import SuggestionService
@@ -74,3 +75,7 @@ def get_follow_service(db: AsyncSession = Depends(get_db)) -> FollowService:
 
 def get_notification_service(db: AsyncSession = Depends(get_db)) -> NotificationService:
     return NotificationService(db)
+
+
+def get_runtime_config_service(db: AsyncSession = Depends(get_db)) -> RuntimeConfigService:
+    return RuntimeConfigService(db)

@@ -3,17 +3,22 @@
 import uuid
 from datetime import datetime
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError
 from app.models.notification import Notification
+from app.models.user import User
 from app.repositories.notification import NotificationRepository
 from app.schemas.common import PaginatedResponse
 from app.schemas.notification import NotificationResponse
 
 
 class NotificationService:
+    BROADCAST_BATCH_SIZE = 500
+
     def __init__(self, session: AsyncSession) -> None:
+        self.session = session
         self.repo = NotificationRepository(session)
 
     async def create_notification(
@@ -60,3 +65,35 @@ class NotificationService:
 
     async def mark_all_read(self, user_id: uuid.UUID) -> int:
         return await self.repo.mark_all_read(user_id)
+
+    async def broadcast(
+        self,
+        title: str,
+        message: str,
+        type: str = "system",
+        role_filter: str | None = None,
+        sender_id: uuid.UUID | None = None,
+    ) -> int:
+        stmt = select(User.id).where(User.is_active.is_(True))
+        if role_filter:
+            stmt = stmt.where(User.role == role_filter)
+
+        result = await self.session.execute(stmt)
+        user_ids = [row[0] for row in result]
+
+        total = 0
+        for i in range(0, len(user_ids), self.BROADCAST_BATCH_SIZE):
+            batch = user_ids[i : i + self.BROADCAST_BATCH_SIZE]
+            notifications = [
+                Notification(
+                    user_id=uid,
+                    type=type,
+                    title=title,
+                    message=message,
+                    data={"broadcast": "true"},
+                )
+                for uid in batch
+            ]
+            total += await self.repo.create_bulk(notifications)
+
+        return total

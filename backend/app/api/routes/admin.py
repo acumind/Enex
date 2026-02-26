@@ -9,8 +9,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import (
     get_audit_log_service,
     get_evaluation_service,
+    get_notification_service,
     get_prediction_service,
     get_predictor_service,
+    get_runtime_config_service,
     get_stats_service,
     get_stock_service,
     get_suggestion_service,
@@ -22,17 +24,27 @@ from app.core.rate_limit import bulk_extract_limiter
 from app.models.user import User
 from app.schemas.audit_log import AuditLogResponse
 from app.schemas.common import PaginatedResponse
+from app.schemas.notification import BroadcastRequest, BroadcastResponse
 from app.schemas.outcome import EvaluationTriggerResponse
 from app.schemas.prediction import PredictionCreate, PredictionResponse, PredictionUpdate
 from app.schemas.predictor import PredictorCreate, PredictorResponse, PredictorUpdate
-from app.schemas.stats import AdminStatsResponse, JobStatusResponse
+from app.schemas.runtime_config import RuntimeConfigResponse, RuntimeConfigUpdate
+from app.schemas.stats import (
+    AdminAlertsResponse,
+    AdminStatsResponse,
+    EvalDashboardResponse,
+    JobStatusResponse,
+    SystemHealthResponse,
+)
 from app.schemas.stock import StockCreate, StockResponse, StockUpdate
 from app.schemas.suggestion import BulkExtractRequest, BulkExtractResponse, SuggestionResponse
 from app.schemas.user import RoleChange, UserBan, UserResponse
 from app.services.audit_log import AuditLogService
 from app.services.evaluation import EvaluationService
+from app.services.notification import NotificationService
 from app.services.prediction import PredictionService
 from app.services.predictor import PredictorService
+from app.services.runtime_config import RuntimeConfigService
 from app.services.stats import StatsService
 from app.services.stock import StockService
 from app.services.suggestion import SuggestionService
@@ -388,3 +400,159 @@ async def get_recent_jobs(
 
     tasks = get_recent_tasks(limit=limit)
     return [JobStatusResponse(**t) for t in tasks]
+
+
+# --- Runtime Config ---
+
+
+@router.get("/config", response_model=list[RuntimeConfigResponse])
+async def list_config(
+    user: User = Depends(_admin),
+    service: RuntimeConfigService = Depends(get_runtime_config_service),
+) -> list[RuntimeConfigResponse]:
+    return await service.list_all()
+
+
+@router.patch("/config/{key}", response_model=RuntimeConfigResponse)
+async def update_config(
+    key: str,
+    data: RuntimeConfigUpdate,
+    user: User = Depends(_admin),
+    service: RuntimeConfigService = Depends(get_runtime_config_service),
+    audit: AuditLogService = Depends(get_audit_log_service),
+    db: AsyncSession = Depends(get_db),
+) -> RuntimeConfigResponse:
+    result = await service.set(key, data.value, updated_by=user.id)
+    await audit.record(user.id, "config.update", "config", details={"key": key, "value": data.value})
+    await db.commit()
+    return result
+
+
+# --- System Health ---
+
+
+@router.get("/health", response_model=SystemHealthResponse)
+async def get_system_health(
+    user: User = Depends(_admin),
+    service: StatsService = Depends(get_stats_service),
+) -> SystemHealthResponse:
+    return await service.get_system_health()
+
+
+# --- Evaluation Dashboard ---
+
+
+@router.get("/eval-dashboard", response_model=EvalDashboardResponse)
+async def get_eval_dashboard(
+    user: User = Depends(_admin),
+    service: StatsService = Depends(get_stats_service),
+) -> EvalDashboardResponse:
+    return await service.get_eval_dashboard()
+
+
+# --- Admin Alerts ---
+
+
+@router.get("/alerts", response_model=AdminAlertsResponse)
+async def get_admin_alerts(
+    user: User = Depends(_admin),
+    service: StatsService = Depends(get_stats_service),
+) -> AdminAlertsResponse:
+    return await service.get_admin_alerts()
+
+
+# --- Data Export (CSV) ---
+
+
+@router.get("/export/predictions")
+async def export_predictions(
+    user: User = Depends(_admin),
+    audit: AuditLogService = Depends(get_audit_log_service),
+    db: AsyncSession = Depends(get_db),
+):
+    from datetime import date as date_type
+
+    from starlette.responses import StreamingResponse
+
+    from app.services.export import stream_predictions_csv
+
+    await audit.record(user.id, "export.predictions", "export")
+    await db.commit()
+    filename = f"predictions_{date_type.today().isoformat()}.csv"
+    return StreamingResponse(
+        stream_predictions_csv(db),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/export/outcomes")
+async def export_outcomes(
+    user: User = Depends(_admin),
+    audit: AuditLogService = Depends(get_audit_log_service),
+    db: AsyncSession = Depends(get_db),
+):
+    from datetime import date as date_type
+
+    from starlette.responses import StreamingResponse
+
+    from app.services.export import stream_outcomes_csv
+
+    await audit.record(user.id, "export.outcomes", "export")
+    await db.commit()
+    filename = f"outcomes_{date_type.today().isoformat()}.csv"
+    return StreamingResponse(
+        stream_outcomes_csv(db),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/export/scorecards")
+async def export_scorecards(
+    user: User = Depends(_admin),
+    audit: AuditLogService = Depends(get_audit_log_service),
+    db: AsyncSession = Depends(get_db),
+):
+    from datetime import date as date_type
+
+    from starlette.responses import StreamingResponse
+
+    from app.services.export import stream_scorecards_csv
+
+    await audit.record(user.id, "export.scorecards", "export")
+    await db.commit()
+    filename = f"scorecards_{date_type.today().isoformat()}.csv"
+    return StreamingResponse(
+        stream_scorecards_csv(db),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+# --- Notification Broadcast ---
+
+
+@router.post("/notifications/broadcast", response_model=BroadcastResponse)
+async def broadcast_notification(
+    data: BroadcastRequest,
+    user: User = Depends(_admin),
+    service: NotificationService = Depends(get_notification_service),
+    audit: AuditLogService = Depends(get_audit_log_service),
+    db: AsyncSession = Depends(get_db),
+) -> BroadcastResponse:
+    recipients = await service.broadcast(
+        title=data.title,
+        message=data.message,
+        type=data.type,
+        role_filter=data.role_filter,
+        sender_id=user.id,
+    )
+    await audit.record(
+        user.id,
+        "notification.broadcast",
+        "notification",
+        details={"title": data.title, "recipients": recipients, "role_filter": data.role_filter},
+    )
+    await db.commit()
+    return BroadcastResponse(recipients=recipients, message=f"Notification sent to {recipients} recipients")

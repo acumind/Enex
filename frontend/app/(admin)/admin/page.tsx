@@ -4,12 +4,15 @@ import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { api } from "@/lib/api-client";
 import type {
+  AdminAlertsResponse,
   AdminStatsResponse,
   AuditLogResponse,
   JobStatusResponse,
   PaginatedResponse,
 } from "@/lib/types";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 function StatCard({
@@ -45,10 +48,35 @@ function JobStatusBadge({ status }: { status: string }) {
   return <Badge variant={variant}>{status}</Badge>;
 }
 
+function ExportButton({
+  label,
+  path,
+  filename,
+}: {
+  label: string;
+  path: string;
+  filename: string;
+}) {
+  async function handleExport() {
+    await api.download(path, filename);
+  }
+  return (
+    <Button variant="outline" size="sm" onClick={handleExport}>
+      {label}
+    </Button>
+  );
+}
+
 export default function AdminPage() {
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ["admin-stats"],
     queryFn: () => api.get<AdminStatsResponse>("/admin/stats"),
+  });
+
+  const { data: alerts } = useQuery({
+    queryKey: ["admin-alerts"],
+    queryFn: () => api.get<AdminAlertsResponse>("/admin/alerts"),
+    refetchInterval: 60000,
   });
 
   const { data: auditData } = useQuery({
@@ -65,9 +93,34 @@ export default function AdminPage() {
       api.get<JobStatusResponse[]>("/admin/jobs/recent", { limit: "10" }),
   });
 
+  const today = new Date().toISOString().split("T")[0];
+
   return (
     <div className="container mx-auto max-w-6xl py-8 px-4">
       <h1 className="text-2xl font-bold mb-6">Admin Dashboard</h1>
+
+      {/* Alerts Banner */}
+      {alerts && alerts.alerts.length > 0 && (
+        <div className="space-y-2 mb-6">
+          {alerts.alerts.map((alert, i) => (
+            <Alert
+              key={i}
+              variant={alert.level === "critical" ? "destructive" : "default"}
+            >
+              <AlertDescription className="flex items-center gap-2">
+                <Badge
+                  variant={
+                    alert.level === "critical" ? "destructive" : "secondary"
+                  }
+                >
+                  {alert.level}
+                </Badge>
+                <span>{alert.message}</span>
+              </AlertDescription>
+            </Alert>
+          ))}
+        </div>
+      )}
 
       {/* Stats Grid */}
       {statsLoading ? (
@@ -92,7 +145,7 @@ export default function AdminPage() {
 
       {/* Quick Actions */}
       <h2 className="text-lg font-semibold mb-3">Quick Actions</h2>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
         <Link href="/admin/review-queue">
           <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
             <CardContent className="pt-6 text-center">
@@ -133,6 +186,70 @@ export default function AdminPage() {
             </CardContent>
           </Card>
         </Link>
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <Link href="/admin/health">
+          <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
+            <CardContent className="pt-6 text-center">
+              <p className="font-medium">System Health</p>
+              <p className="text-sm text-muted-foreground">
+                DB, Redis, Celery status
+              </p>
+            </CardContent>
+          </Card>
+        </Link>
+        <Link href="/admin/evaluations">
+          <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
+            <CardContent className="pt-6 text-center">
+              <p className="font-medium">Evaluations</p>
+              <p className="text-sm text-muted-foreground">
+                Outcome metrics and trends
+              </p>
+            </CardContent>
+          </Card>
+        </Link>
+        <Link href="/admin/config">
+          <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
+            <CardContent className="pt-6 text-center">
+              <p className="font-medium">Configuration</p>
+              <p className="text-sm text-muted-foreground">
+                Feature flags and settings
+              </p>
+            </CardContent>
+          </Card>
+        </Link>
+        <Link href="/admin/broadcast">
+          <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
+            <CardContent className="pt-6 text-center">
+              <p className="font-medium">Broadcast</p>
+              <p className="text-sm text-muted-foreground">
+                Send notifications to users
+              </p>
+            </CardContent>
+          </Card>
+        </Link>
+      </div>
+
+      {/* Export Actions */}
+      <div className="flex items-center gap-3 mb-8">
+        <span className="text-sm font-medium text-muted-foreground">
+          Export:
+        </span>
+        <ExportButton
+          label="Predictions CSV"
+          path="/admin/export/predictions"
+          filename={`predictions_${today}.csv`}
+        />
+        <ExportButton
+          label="Outcomes CSV"
+          path="/admin/export/outcomes"
+          filename={`outcomes_${today}.csv`}
+        />
+        <ExportButton
+          label="Scorecards CSV"
+          path="/admin/export/scorecards"
+          filename={`scorecards_${today}.csv`}
+        />
       </div>
 
       {/* Two-column layout for Recent Activity and Jobs */}

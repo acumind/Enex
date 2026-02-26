@@ -275,6 +275,78 @@ export interface JobStatusResponse {
   traceback: string | null;
 }
 
+// --- System Health & Monitoring types ---
+
+export interface SystemHealthResponse {
+  db_pool_size: number;
+  db_pool_checked_in: number;
+  db_pool_checked_out: number;
+  db_pool_overflow: number;
+  redis_latency_ms: number | null;
+  redis_memory: string | null;
+  redis_connected_clients: number | null;
+  celery_workers: number;
+  celery_active_tasks: number;
+  celery_reserved_tasks: number;
+}
+
+export interface RecentEvaluation {
+  prediction_id: string;
+  stock_symbol: string;
+  predictor_name: string;
+  outcome_status: string;
+  deviation_pct: number | null;
+  evaluated_at: string;
+}
+
+export interface EvalDashboardResponse {
+  total_evaluated: number;
+  total_pending: number;
+  hits: number;
+  misses: number;
+  partial_hits: number;
+  accuracy_pct: number | null;
+  avg_deviation_pct: number | null;
+  recent_evaluations: RecentEvaluation[];
+  evaluations_today: number;
+  evaluations_this_week: number;
+}
+
+export interface AdminAlert {
+  level: string;
+  category: string;
+  message: string;
+}
+
+export interface AdminAlertsResponse {
+  alerts: AdminAlert[];
+  checked_at: string;
+}
+
+export interface RuntimeConfigResponse {
+  key: string;
+  value: string;
+  description: string | null;
+  updated_by: string | null;
+  updated_at: string;
+}
+
+export interface RuntimeConfigUpdate {
+  value: string;
+}
+
+export interface BroadcastRequest {
+  title: string;
+  message: string;
+  type: string;
+  role_filter: string | null;
+}
+
+export interface BroadcastResponse {
+  recipients: number;
+  message: string;
+}
+
 // --- Auth types ---
 
 export interface AuthUser {

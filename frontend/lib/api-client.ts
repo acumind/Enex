@@ -92,6 +92,33 @@ class ApiClient {
   async delete<T>(path: string): Promise<T> {
     return this.request<T>(path, { method: "DELETE" });
   }
+
+  async download(path: string, filename: string): Promise<void> {
+    const token = _getAccessToken();
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+    const response = await fetch(`${API_BASE}${path}`, {
+      headers,
+      credentials: "include",
+    });
+    if (!response.ok) {
+      throw new ApiClientError(
+        `Download failed with status ${response.status}`,
+        response.status,
+      );
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
 }
 
 export class ApiClientError extends Error {
