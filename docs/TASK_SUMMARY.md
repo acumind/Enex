@@ -2,7 +2,7 @@
 
 > Living document tracking sprint-wise completion, observations, and guidance for future implementation.
 >
-> Last updated: 2026-02-26
+> Last updated: 2026-02-27
 
 ---
 
@@ -1246,6 +1246,102 @@ Audit records are created via `session.flush()` (not commit) inside the same DB 
 #### 5. Stock management reuses existing backend infrastructure
 
 `GET /admin/stocks` reuses `StockService.list_with_filters()` (already supports sector filter + cursor pagination, returns active AND inactive stocks). `PATCH /admin/stocks/{id}` reuses `StockService.update()` + `StockUpdate` schema — both were already implemented in Sprint 1. No new service methods were needed.
+
+---
+
+## Sprint 9: Advanced Admin Features (Completed)
+
+### Objective
+
+Add six advanced admin features for production launch: runtime configuration (feature flags), system health diagnostics, evaluation outcomes dashboard, threshold-based admin alerts, streaming CSV data exports, and notification broadcast.
+
+### Tasks Completed
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 1 | `RuntimeConfig` model + migration with seed data | Done | String PK (`key`), Text `value`, FK to `users.id`, 4 initial keys seeded (maintenance_mode, max_predictions_per_day, evaluation_enabled, registration_enabled) |
+| 2 | RuntimeConfig repository | Done | `get_by_key()`, `list_all()`, `upsert()` — follows BaseRepository pattern without extending it (string PK, not UUID) |
+| 3 | RuntimeConfig service with Redis caching | Done | `get()` checks Redis (`enex:config:{key}`, TTL 60s) → DB fallback → default; `set()` upserts + invalidates cache; `get_bool()` convenience method |
+| 4 | RuntimeConfig schemas | Done | `RuntimeConfigResponse` (from_attributes), `RuntimeConfigUpdate` (value with min/max length) |
+| 5 | Config API endpoints | Done | `GET /admin/config` lists all, `PATCH /admin/config/{key}` updates + audit log |
+| 6 | System health service method | Done | `StatsService.get_system_health()` — DB pool stats (`engine.pool`), Redis PING latency + INFO memory/clients, Celery inspect active/reserved/ping |
+| 7 | Evaluation dashboard service method | Done | `StatsService.get_eval_dashboard()` — outcome status counts, pending (approved without outcome), accuracy %, avg deviation, recent 10 evaluations with JOINs, today/this-week counts |
+| 8 | Admin alerts service method | Done | `StatsService.get_admin_alerts()` — threshold checks: pending predictions >50/100, pending suggestions >30, DB pool >80%, Celery workers == 0, Redis latency >100ms |
+| 9 | Health/eval/alerts schemas | Done | `SystemHealthResponse`, `RecentEvaluation`, `EvalDashboardResponse`, `AdminAlert`, `AdminAlertsResponse` added to `schemas/stats.py` |
+| 10 | Health/eval/alerts API endpoints | Done | `GET /admin/health`, `GET /admin/eval-dashboard`, `GET /admin/alerts` — all admin-only |
+| 11 | CSV export service | Done | `stream_predictions_csv()`, `stream_outcomes_csv()`, `stream_scorecards_csv()` — async generators yielding CSV rows with JOINed enrichment data |
+| 12 | CSV export API endpoints | Done | `GET /admin/export/{predictions,outcomes,scorecards}` — `StreamingResponse(media_type="text/csv")`, Content-Disposition with dated filename, audit logged |
+| 13 | Notification broadcast service method | Done | `NotificationService.broadcast()` — queries active users (optional role filter), creates notifications in batches of 500 via `create_bulk()` |
+| 14 | Broadcast schemas | Done | `BroadcastRequest` (title, message, type, role_filter), `BroadcastResponse` (recipients, message) |
+| 15 | Broadcast API endpoint | Done | `POST /admin/notifications/broadcast` — admin-only, audit logged |
+| 16 | DI provider | Done | `get_runtime_config_service()` added to `deps.py` |
+| 17 | System Health page (frontend) | Done | Alerts banner, DB pool bar chart, Redis latency/memory/clients, Celery workers/tasks; 30s auto-refresh |
+| 18 | Evaluation Dashboard page (frontend) | Done | Summary cards (evaluated, pending, accuracy, deviation), outcome breakdown with proportional color bars, recent evaluations table |
+| 19 | Runtime Config page (frontend) | Done | Switch toggles for boolean keys, edit dialog for string/numeric keys, `useMutation` with query invalidation |
+| 20 | Notification Broadcast page (frontend) | Done | Title/message form, type select (system/info/warning), role filter select, success toast |
+| 21 | Admin dashboard enhancements | Done | Alerts banner at top, 4 new quick-action cards (health, evaluations, config, broadcast), export buttons row (3 CSV downloads) |
+| 22 | Frontend types | Done | 8 new interfaces: `SystemHealthResponse`, `RecentEvaluation`, `EvalDashboardResponse`, `AdminAlert`, `AdminAlertsResponse`, `RuntimeConfigResponse`, `RuntimeConfigUpdate`, `BroadcastRequest`, `BroadcastResponse` |
+| 23 | API client download method | Done | `api.download(path, filename)` — fetches with auth, creates Blob → programmatic `<a>` click → revoke |
+| 24 | Shadcn switch component | Done | Installed via `npx shadcn@latest add switch` for config page toggles |
+
+### Files Created (11)
+
+| File | Purpose |
+|------|---------|
+| `backend/app/models/runtime_config.py` | RuntimeConfig ORM model (String PK, Text value, FK to users) |
+| `backend/app/repositories/runtime_config.py` | Repository with `get_by_key`, `list_all`, `upsert` |
+| `backend/app/services/runtime_config.py` | Service with Redis-cached reads (60s TTL) |
+| `backend/app/schemas/runtime_config.py` | Request/response schemas |
+| `backend/app/services/export.py` | CSV streaming generators for predictions, outcomes, scorecards |
+| `backend/migrations/versions/fc5d95390eef_add_runtime_config_table.py` | Migration + 4 seeded config keys |
+| `frontend/app/(admin)/admin/health/page.tsx` | System Health page |
+| `frontend/app/(admin)/admin/evaluations/page.tsx` | Evaluation Dashboard page |
+| `frontend/app/(admin)/admin/config/page.tsx` | Runtime Config page with toggle switches |
+| `frontend/app/(admin)/admin/broadcast/page.tsx` | Notification Broadcast form page |
+| `frontend/components/ui/switch.tsx` | Shadcn switch component |
+
+### Files Modified (10)
+
+| File | Change |
+|------|--------|
+| `backend/app/api/routes/admin.py` | 9 new endpoints: config list/update, health, eval-dashboard, alerts, 3 CSV exports, broadcast |
+| `backend/app/api/deps.py` | Added `get_runtime_config_service()` |
+| `backend/app/services/stats.py` | Added `get_system_health()`, `get_eval_dashboard()`, `get_admin_alerts()` |
+| `backend/app/schemas/stats.py` | Added 5 new schemas (SystemHealth, EvalDashboard, RecentEvaluation, AdminAlert, AdminAlerts) |
+| `backend/app/schemas/notification.py` | Added `BroadcastRequest`, `BroadcastResponse` |
+| `backend/app/services/notification.py` | Added `broadcast()` with batched creation (500 per batch) |
+| `backend/app/models/__init__.py` | Registered `RuntimeConfig` |
+| `frontend/app/(admin)/admin/page.tsx` | Added alerts banner, 4 new quick-action links, 3 CSV export buttons |
+| `frontend/lib/types.ts` | Added 8 new interfaces |
+| `frontend/lib/api-client.ts` | Added `download()` method for CSV exports |
+
+### Test Results
+
+- **435 backend tests passing** (no new tests — feature is admin-only CRUD/read with existing patterns)
+- **ruff check**: clean
+- **`next build`**: clean (4 new admin pages compiled)
+
+### Observations & Design Notes
+
+#### 1. RuntimeConfig uses string PK (not UUID) for ergonomic key-value access
+
+The `runtime_config` table uses `key` (String(100)) as primary key rather than UUID. This allows direct lookups by key name without a secondary index, and makes the Redis cache key structure natural (`enex:config:{key}`). The `upsert()` pattern checks existence first then updates or creates — simpler than PostgreSQL `ON CONFLICT DO UPDATE` for async SQLAlchemy.
+
+#### 2. System health probes are fail-open with per-subsystem error handling
+
+Each health probe (DB pool, Redis, Celery) is wrapped in its own try/except block. If Redis is unreachable, the endpoint still returns DB pool and Celery stats (with Redis fields as `null`). Celery inspection uses a 2-second timeout to avoid blocking on unresponsive workers. The `engine.pool` stats are always available since they're in-process.
+
+#### 3. Admin alerts are computed on-demand, not stored
+
+`get_admin_alerts()` calls `get_admin_stats()` and `get_system_health()` internally and applies threshold checks. Alerts are ephemeral — no persistence, no notification history. This keeps the implementation simple. If persistent alerting is needed later, a scheduled job could store alerts and send notifications.
+
+#### 4. CSV exports use sync iteration (not async streaming) over SQLAlchemy results
+
+The export functions use `await session.execute()` to fetch results, then iterate synchronously with `for row in result`. True async streaming (`async for row in result.stream()`) requires `execution_options(stream_results=True)` and server-side cursors, which adds complexity. For admin export volumes (thousands of rows, not millions), the simpler approach is sufficient.
+
+#### 5. Notification broadcast batches at 500 to avoid memory pressure
+
+`NotificationService.broadcast()` queries all matching user IDs upfront (lightweight UUID list), then creates `Notification` objects in batches of 500 via `create_bulk()`. Each batch is flushed to the database before the next batch starts, keeping memory usage bounded. The route-level `db.commit()` finalizes all batches in a single transaction.
 
 ---
 
